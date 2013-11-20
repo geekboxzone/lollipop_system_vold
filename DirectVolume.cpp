@@ -240,7 +240,10 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
     }
 
     if (part_num > mDiskNumParts) {
-        mDiskNumParts = part_num;
+        if (mDiskNumParts == 0)
+            mDiskNumParts = part_num;
+        else
+            part_num = mDiskNumParts;
     }
 
     if (major != mDiskMajor) {
