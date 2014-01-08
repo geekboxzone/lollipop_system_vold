@@ -607,6 +607,7 @@ int Volume::unmountVol(bool force, bool revert) {
 
     int flags = getFlags();
     bool providesAsec = ((flags & VOL_PROVIDES_ASEC) != 0)&&(!mSkipAsec);
+    revert = mPartIdx == -1 ? false : revert;
 
     if (getState() != Volume::State_Mounted) {
         SLOGE("Volume %s unmount request when not mounted", getLabel());
