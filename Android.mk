@@ -40,7 +40,6 @@ common_shared_libraries := \
 	libdiskconfig \
 	libhardware_legacy \
 	liblogwrap \
-	libext4_utils \
 	libf2fs_sparseblock \
 	libcrypto \
 	libselinux \
@@ -52,7 +51,8 @@ common_static_libraries := \
 	libfs_mgr \
 	libscrypt_static \
 	libmincrypt \
-	libbatteryservice
+	libbatteryservice \
+	libext4_utils_static
 
 include $(CLEAR_VARS)
 
