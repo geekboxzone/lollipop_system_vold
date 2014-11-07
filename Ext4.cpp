@@ -44,7 +44,7 @@
 #include "VoldUtil.h"
 
 #define MKEXT4FS_PATH "/system/bin/make_ext4fs"
-#define RESIZE2FS_PATH "/system/bin/resize2fs"
+#define RESIZE2FS_PATH "/sbin/resize2fs"
 
 int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remount,
         bool executable) {
