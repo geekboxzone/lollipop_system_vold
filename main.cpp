@@ -36,7 +36,9 @@
 #include "NetlinkManager.h"
 #include "DirectVolume.h"
 #include "cryptfs.h"
-
+#include "G3Dev.h"
+#include  "MiscManager.h"
+#include <sysutils/NetlinkEvent.h>
 static int process_config(VolumeManager *vm);
 static void coldboot(const char *path);
 
@@ -85,7 +87,22 @@ int main() {
         SLOGE("Unable to start NetlinkManager (%s)", strerror(errno));
         exit(1);
     }
-
+ #ifdef USE_USB_MODE_SWITCH
+      SLOGE("Start Misc devices Manager...");
+      MiscManager *mm;
+         if (!(mm = MiscManager::Instance())) {
+		 SLOGE("Unable to create MiscManager");
+		 exit(1);
+		};
+	  mm->setBroadcaster((SocketListener *) cl);
+	     if (mm->start()) {
+		 SLOGE("Unable to start MiscManager (%s)", strerror(errno));
+	     exit(1);
+	    }
+	  G3Dev* g3 = new G3Dev(mm);
+	  g3->handleUsb();
+	  mm->addMisc(g3);
+#endif
     coldboot("/sys/block");
 //    coldboot("/sys/class/switch");
 

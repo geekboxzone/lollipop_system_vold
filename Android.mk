@@ -17,7 +17,11 @@ common_src_files := \
 	CheckBattery.cpp \
 	VoldUtil.c \
 	fstrim.c \
-	cryptfs.c
+	cryptfs.c \
+	MiscManager.cpp \
+	Misc.cpp \
+	G3Dev.cpp
+	
 
 common_c_includes := \
 	system/extras/ext4_utils \
@@ -81,6 +85,7 @@ LOCAL_SRC_FILES := \
 LOCAL_C_INCLUDES := $(common_c_includes)
 
 LOCAL_CFLAGS := -Werror=format
+LOCAL_CFLAGS += -DUSE_USB_MODE_SWITCH
 
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 
