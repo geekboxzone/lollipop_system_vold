@@ -46,6 +46,7 @@
 #include "VolumeManager.h"
 #include "ResponseCode.h"
 #include "Fat.h"
+#include "Ntfs.h"
 #include "Process.h"
 #include "cryptfs.h"
 
@@ -329,6 +330,9 @@ int Volume::mountVol() {
     property_get("vold.decrypt", decrypt_state, "");
     property_get("vold.encrypt_progress", encrypt_progress, "");
 
+    char getSupNtfs[PROPERTY_VALUE_MAX];
+    property_get("ro.factory.storage_suppntfs", getSupNtfs, "true");
+    bool isSupNtfs = !strcmp(getSupNtfs, "true");
     /* Don't try to mount the volumes if we have not yet entered the disk password
      * or are in the process of encrypting.
      */
@@ -418,12 +422,12 @@ int Volume::mountVol() {
         sprintf(devicePath, "/dev/block/vold/%d:%d", major(deviceNodes[i]),
                 minor(deviceNodes[i]));
 
-        SLOGI("%s being considered for volume %s\n", devicePath, getLabel());
+        SLOGI("%s being considered for volume %s,%d\n ", devicePath, getLabel(),isSupNtfs);
 
         errno = 0;
         setState(Volume::State_Checking);
 
-        if (Fat::check(devicePath)) {
+        if (Fat::check(devicePath) && !isSupNtfs) {
             if (errno == ENODATA) {
                 SLOGW("%s does not contain a FAT filesystem\n", devicePath);
                 continue;
@@ -441,7 +445,10 @@ int Volume::mountVol() {
         if (Fat::doMount(devicePath, getMountpoint(), false, false, false,
                 AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
             SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
-            continue;
+            if (Ntfs::doMount(devicePath, getMountpoint(), true, AID_MEDIA_RW, AID_MEDIA_RW)) {
+                SLOGE("%s failed to mount via VNTFS (%s)\n", devicePath, strerror(errno));
+                continue;
+            }
         }
 
         extractMetadata(devicePath);
