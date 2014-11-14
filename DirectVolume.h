@@ -60,7 +60,7 @@ public:
     int addPath(const char *path);
 
     const char *getMountpoint() { return mMountpoint; }
-    const char *getFuseMountpoint() { return mFuseMountpoint; }
+    const char *getFuseMountpoint() { return mMountpoint; }
 
     int handleBlockEvent(NetlinkEvent *evt);
     dev_t getDiskDevice();

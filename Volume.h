@@ -54,6 +54,7 @@ protected:
     char* mUserLabel;
     VolumeManager *mVm;
     bool mDebug;
+	bool mSkipAsec;
     int mPartIdx;
     int mOrigPartIdx;
     bool mRetryMount;
@@ -108,6 +109,7 @@ private:
     int mountAsecExternal();
     int doUnmount(const char *path, bool force);
     int extractMetadata(const char* devicePath);
+	void notifyStateKernel(int number);
 };
 
 typedef android::List<Volume *> VolumeCollection;

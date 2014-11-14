@@ -53,8 +53,8 @@
 #include "Asec.h"
 #include "cryptfs.h"
 
-#define MASS_STORAGE_FILE_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun/file"
-
+#define MASS_STORAGE_FLASH_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun/file"
+#define MASS_STORAGE_SDCARD_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun1/file"
 #define ROUND_UP_POWER_OF_2(number, po2) (((!!(number & ((1U << po2) - 1))) << po2)\
                                          + (number & (~((1U << po2) - 1))))
 
@@ -1583,10 +1583,24 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
         return -1;
     }
 
-    if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
-        return -1;
-    }
+	const char* temp=getenv("EXTERNAL_STORAGE_FLASH");
+	SLOGI("EXTERNAL_STORAGE_FLASH is %s",temp);
+	if(!strcmp(label,temp)){
+		SLOGI("share flash");
+    	if ((fd = open(MASS_STORAGE_FLASH_PATH, O_WRONLY)) < 0) {
+        	SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+        	return -1;
+    	}
+	}
+	else
+	{
+		SLOGI("share sdcard");
+		if ((fd = open(MASS_STORAGE_SDCARD_PATH, O_WRONLY)) < 0) {
+				SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+				return -1;
+		}
+	}
+
 
     if (write(fd, nodepath, strlen(nodepath)) < 0) {
         SLOGE("Unable to write to ums lunfile (%s)", strerror(errno));
@@ -1633,11 +1647,23 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
     }
 
     int fd;
-    if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
-        return -1;
-    }
-
+  const char* temp=getenv("EXTERNAL_STORAGE_FLASH");
+	SLOGI("EXTERNAL_STORAGE_FLASH is %s",temp);
+	if(!strcmp(label,temp)){
+		SLOGI("unshare flash");
+		if ((fd = open(MASS_STORAGE_FLASH_PATH, O_WRONLY)) < 0) {
+			SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+			return -1;
+		}
+	}
+	else
+	{
+		SLOGI("unshare sdcard");
+		if ((fd = open(MASS_STORAGE_SDCARD_PATH, O_WRONLY)) < 0) {
+			SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+			return -1;
+		}
+	}
     char ch = 0;
     if (write(fd, &ch, 1) < 0) {
         SLOGE("Unable to write to ums lunfile (%s)", strerror(errno));
