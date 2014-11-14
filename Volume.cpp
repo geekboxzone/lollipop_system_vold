@@ -295,8 +295,13 @@ int Volume::formatVol(bool wipe) {
         }
     }
 
-    sprintf(devicePath, "/dev/block/vold/%d:%d",
-            major(partNode), minor(partNode));
+    if (!strcmp(getLabel(),"internal_sd") && !(major(diskNode) != 179)) {
+        sprintf(devicePath, "/dev/block/vold/%d:%d",
+                major(diskNode), minor(diskNode));
+    } else {
+        sprintf(devicePath, "/dev/block/vold/%d:%d",
+                major(partNode), minor(partNode));
+    }
 
     if (mDebug) {
         SLOGI("Formatting volume %s (%s)", getLabel(), devicePath);
