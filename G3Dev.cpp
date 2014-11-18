@@ -32,7 +32,7 @@
 #include <unistd.h>
 
 //#define USBPATH  "/sys/class/usb_device/usbdev1.1/device/1-1"
-#define  USBPATH   "/sys/class/usb_device/usbdev1.1/device/1-1"
+#define  USBPATH   "/sys/bus/usb/devices/1-1"
 #if PLATFORM_SDK_VERSION >= 16
 #define LOGV(fmt,args...) ALOGV(fmt,##args)
 #define LOGD(fmt,args...) ALOGD(fmt,##args)
@@ -117,7 +117,9 @@ int G3Dev::handleUsb(){
  char configure_file[2048];
  int pid,vid;
  this->get_tty_id(USBPATH,&vid,& pid);
+  
  sprintf(configure_file, "/etc/usb_modeswitch.d/%04x_%04x", vid,pid);
+ SLOGD("=== config_file is: %04x_%04x", vid ,pid);
  if( access(configure_file, 0) == 0 )
  {
 	sprintf(modeswitch_cmd, "/system/bin/usb_modeswitch.sh %s &", configure_file);
@@ -131,11 +133,11 @@ int G3Dev:: get_tty_id( char* tty_path, int *vid, int* pid)
 {
    
 	   char linkto[1024]="";
-	   SLOGD("began find device path");
-	   SLOGD("device path: %s", tty_path);////	  
+	   //SLOGD("began find device path");
+	  // SLOGD("device path: %s", tty_path);////	  
 	   		   
 	   //  LOGD("USB device path: %s", plink);
-	   char pidpath[1024]="/sys/class/usb_device/usbdev1.1/device/1-1";
+	   char pidpath[1024]="/sys/bus/usb/devices/1-1";
 	   
 		   FILE* fp = NULL;
 		   char buf[5] = "";
@@ -151,8 +153,8 @@ int G3Dev:: get_tty_id( char* tty_path, int *vid, int* pid)
 		   }
 		   fclose(fp);
 		   *vid = atox(buf, 16);
-	   char vidpath[1024]="/sys/class/usb_device/usbdev1.1/device/1-1";
-		
+	   char vidpath[1024]="/sys/bus/usb/devices/1-1";
+	//sys/bus/usb/devices/1-1	
 		   strcat(vidpath, "/idProduct");
 	   //	 LOGD("Product path: %s", plink);
 		   fp = fopen(vidpath, "r");
