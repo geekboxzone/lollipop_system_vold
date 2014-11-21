@@ -370,7 +370,7 @@ int Volume::mountVol() {
      * or are in the process of encrypting.
      */
     if ((getState() == Volume::State_NoMedia) ||
-        ((!strcmp(decrypt_state, "1") || encrypt_progress[0]) && providesAsec)) {
+        ((!strcmp(decrypt_state, "1") || (encrypt_progress[0] && encrypt_progress[2] != '0')) && providesAsec)) {
         snprintf(errmsg, sizeof(errmsg),
                  "Volume %s %s mount failed - no media",
                  getLabel(), getFuseMountpoint());
