@@ -1613,6 +1613,7 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
     if (mUmsSharingCount++ == 0) {
         FILE* fp;
         mSavedDirtyRatio = -1; // in case we fail
+        mUmsDirtyRatio = 5; // use 0 on linux 3.x would cause a vfs_write timeout during ums copying
         if ((fp = fopen("/proc/sys/vm/dirty_ratio", "r+"))) {
             char line[16];
             if (fgets(line, sizeof(line), fp) && sscanf(line, "%d", &mSavedDirtyRatio)) {
