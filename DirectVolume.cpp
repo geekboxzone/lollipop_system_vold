@@ -32,7 +32,7 @@
 #include "ResponseCode.h"
 #include "cryptfs.h"
 
-// #define PARTITION_DEBUG
+ #define PARTITION_DEBUG
 
 PathInfo::PathInfo(const char *p)
 {
@@ -202,6 +202,13 @@ void DirectVolume::handleDiskAdded(const char * /*devpath*/,
         mDiskNumParts = 1;
     }
 
+ 
+#ifdef PARTITION_DEBUG
+       SLOGD("----handleDiskAdded,mDiskNumParts =%d,mDiskMajor=%d,mDiskMinor=%d",mDiskNumParts,mDiskMajor,mDiskMinor);
+#endif
+
+    char msg[255];
+
     mPendingPartCount = mDiskNumParts;
     for (int i = 0; i < MAX_PARTITIONS; i++)
         mPartMinors[i] = -1;
@@ -211,6 +218,9 @@ void DirectVolume::handleDiskAdded(const char * /*devpath*/,
         SLOGD("Dv::diskIns - No partitions - good to go son!");
 #endif
         setState(Volume::State_Idle);
+        snprintf(msg, sizeof(msg), "Volume %s %s disk inserted (%d:%d)",
+                    getLabel(), getMountpoint(), mDiskMajor, mDiskMinor);
+        mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskInserted,msg, false);
     } else {
 #ifdef PARTITION_DEBUG
         SLOGD("Dv::diskIns - waiting for %d pending partitions", mPendingPartCount);
@@ -246,6 +256,9 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
             part_num = mDiskNumParts;
     }
 
+#ifdef PARTITION_DEBUG
+       SLOGD("---handlePartitionAdded,part_num=%d,major=%d,minor=%d",part_num,major,minor);
+#endif
     if (major != mDiskMajor) {
         SLOGE("Partition '%s' has a different major than its disk!", devpath);
         return;
@@ -322,12 +335,35 @@ void DirectVolume::handleDiskRemoved(const char * /*devpath*/,
     int major = atoi(evt->findParam("MAJOR"));
     int minor = atoi(evt->findParam("MINOR"));
     char msg[255];
+    char devicePath[255];
     bool enabled;
 
     if (mVm->shareEnabled(getLabel(), "ums", &enabled) == 0 && enabled) {
         mVm->unshareVolume(getLabel(), "ums");
     }
 
+   
+    sprintf(devicePath, "/dev/block/vold/%d:%d", major,minor);
+
+    if (access(devicePath, R_OK) == 0) {
+        SLOGD("current mounted dev exist,access devicePath: %s ;partitionNum: %d", devicePath, mDiskNumParts);
+
+        /*
+         * Confirm partition removed.
+         */
+         if (Volume::unmountVol(true, false)) {
+            SLOGE("Failed to unmount volume on bad removal (%s)",
+                 strerror(errno));
+             // XXX: At this point we're screwed for now
+         } else {
+             SLOGD("Crisis averted");
+         }
+
+         SLOGE("handlePartitionRemoved,ready to unlink: %s",devicePath);
+         if ( 0 != unlink(devicePath) ) {
+             SLOGE("Failed to unlink %s",devicePath);
+         }
+    }
     SLOGD("Volume %s %s disk %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
     snprintf(msg, sizeof(msg), "Volume %s %s disk removed (%d:%d)",
              getLabel(), getFuseMountpoint(), major, minor);
@@ -380,8 +416,8 @@ void DirectVolume::handlePartitionRemoved(const char * /*devpath*/,
         }
     } else if (state == Volume::State_Shared) {
         /* removed during mass storage */
-        snprintf(msg, sizeof(msg), "Volume %s bad removal (%d:%d)",
-                 getLabel(), major, minor);
+         snprintf(msg, sizeof(msg), "Volume %s %s bad removal (%d:%d)",
+                 getLabel(), getFuseMountpoint(), major, minor);
         mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeBadRemoval,
                                              msg, false);
 
