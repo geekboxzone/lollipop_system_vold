@@ -19,6 +19,7 @@
 #include <string.h>
 #include <errno.h>
 #include <fnmatch.h>
+#include <libgen.h>
 
 #include <linux/kdev_t.h>
 
@@ -32,7 +33,7 @@
 #include "ResponseCode.h"
 #include "cryptfs.h"
 
- #define PARTITION_DEBUG
+#define PARTITION_DEBUG
 
 PathInfo::PathInfo(const char *p)
 {
@@ -152,6 +153,11 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
                                                                strerror(errno));
                 }
                 if (!strcmp(devtype, "disk")) {
+			char *p1 = basename(dp);
+			if (strstr(p1,"boot0") != 0 || strstr(p1,"boot1") != 0) {
+				SLOGD("skia mmc boot disk ! path : %s",dp);
+				continue;
+			}
                     handleDiskAdded(dp, evt);
                 } else {
                     handlePartitionAdded(dp, evt);
@@ -257,7 +263,7 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
     }
 
 #ifdef PARTITION_DEBUG
-       SLOGD("---handlePartitionAdded,part_num=%d,major=%d,minor=%d",part_num,major,minor);
+       SLOGD("---handlePartitionAdded,part_num=%d,major=%d,minor=%d,mDiskMajor=%d",part_num,major,minor,mDiskMajor);
 #endif
     if (major != mDiskMajor) {
         SLOGE("Partition '%s' has a different major than its disk!", devpath);
