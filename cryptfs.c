@@ -1434,6 +1434,7 @@ static int wait_and_unmount(char *mountpoint, bool kill)
 
     /*  Now umount the tmpfs filesystem */
     for (i=0; i<WAIT_UNMOUNT_COUNT; i++) {
+	vold_killProcessesWithOpenFiles(mountpoint,2);
         if (umount(mountpoint) == 0) {
             break;
         }
