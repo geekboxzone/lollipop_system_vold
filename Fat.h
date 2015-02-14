@@ -27,7 +27,7 @@ public:
                        int ownerUid, int ownerGid, int permMask,
                        bool createLost);
     static int format(const char *fsPath, unsigned int numSectors, bool wipe);
-
+ static int format(const char *fsPath, unsigned int numSectors, bool wipe, const char *label);
 private:
     static void wipe(const char *fsPath, unsigned int numSectors);
 };

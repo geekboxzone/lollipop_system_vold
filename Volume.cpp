@@ -276,6 +276,7 @@ int Volume::formatVol(bool wipe) {
 
     bool formatEntireDevice = (mPartIdx == -1);
     char devicePath[255];
+    char label[PROPERTY_VALUE_MAX] = "";
     dev_t diskNode = getDiskDevice();
     dev_t partNode =
         MKDEV(MAJOR(diskNode),
@@ -285,6 +286,10 @@ int Volume::formatVol(bool wipe) {
 
     int ret = -1;
     // Only initialize the MBR if we are formatting the entire device
+    if (!strcmp(getLabel(),"internal_sd")) {
+          property_get("UserVolumeLabel", label, "");
+          formatEntireDevice = false;
+    }
     if (formatEntireDevice) {
         sprintf(devicePath, "/dev/block/vold/%d:%d",
                 major(diskNode), minor(diskNode));
@@ -295,9 +300,9 @@ int Volume::formatVol(bool wipe) {
         }
     }
 
-    if (!strcmp(getLabel(),"internal_sd") && !(major(diskNode) != 179)) {
+    if (!strcmp(getLabel(),"internal_sd") && (major(diskNode) != 179)) {
         sprintf(devicePath, "/dev/block/vold/%d:%d",
-                major(diskNode), minor(diskNode));
+                major(diskNode), MINOR(diskNode));
     } else {
         sprintf(devicePath, "/dev/block/vold/%d:%d",
                 major(partNode), minor(partNode));
@@ -307,11 +312,13 @@ int Volume::formatVol(bool wipe) {
         SLOGI("Formatting volume %s (%s)", getLabel(), devicePath);
     }
 
-    if (Fat::format(devicePath, 0, wipe)) {
+    if (Fat::format(devicePath, 0, wipe,label)) {
         SLOGE("Failed to format (%s)", strerror(errno));
         goto err;
     }
-
+     if (!strcmp(getLabel(),"internal_sd")) {
+          system("sync");
+    }
     ret = 0;
 
 err:
