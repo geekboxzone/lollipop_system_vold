@@ -171,7 +171,7 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
 
 int Fat::format(const char *fsPath, unsigned int numSectors, bool wipe, const char *label) {
     int fd;
-    const char *args[12];
+    const char *args[13];
     int rc;
     int status;
     int num_args;
@@ -193,35 +193,31 @@ int Fat::format(const char *fsPath, unsigned int numSectors, bool wipe, const ch
         char tmp[32];
         snprintf(tmp, sizeof(tmp), "%u", numSectors);
         const char *size = tmp;
-       // args[8] = "-s";
-       // args[9] = size;
-        //args[10] = fsPath;
         if (strlen(label) > 0) {
-             args[7] = "-L";
-             args[8] = label;
-             args[9] = "-s";
-             args[10] = size;
-             args[11] = fsPath;
-             num_args = 12;
+             args[8] = "-L";
+             args[9] = label;
+             args[10] = "-s";
+             args[11] = size;
+             args[12] = fsPath;
+             num_args = 13;
          } else {
-             args[7] = "-s";
-             args[8] = size;
-             args[9] = fsPath;
-             num_args = 10;
+             args[8] = "-s";
+             args[9] = size;
+             args[10] = fsPath;
+             num_args = 11;
          }
         rc = android_fork_execvp(num_args, (char **)args, &status,
                 false, true);
     } else {
-        //args[8] = fsPath;
     	SLOGE("label : %s, fsPath : %s", label, fsPath);
         if (strlen(label) > 0) {
-            args[7] = "-L";
-            args[8] = label;
-            args[9] = fsPath;
-            num_args = 10;
+            args[8] = "-L";
+            args[9] = label;
+            args[10] = fsPath;
+            num_args = 11;
         } else {
-            args[7] = fsPath;
-            num_args = 8;
+            args[8] = fsPath;
+            num_args = 9;
         }
         rc = android_fork_execvp(num_args, (char **)args, &status, false,
                 true);
