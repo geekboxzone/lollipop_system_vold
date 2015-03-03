@@ -302,7 +302,7 @@ int Volume::formatVol(bool wipe) {
 
     if (!strcmp(getLabel(),"internal_sd") && (major(diskNode) != 179)) {
         sprintf(devicePath, "/dev/block/vold/%d:%d",
-                major(diskNode), MINOR(diskNode));
+                major(diskNode), minor(diskNode));
     } else {
         sprintf(devicePath, "/dev/block/vold/%d:%d",
                 major(partNode), minor(partNode));
