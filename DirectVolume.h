@@ -52,6 +52,10 @@ protected:
     int            mDiskNumParts;
     int            mPendingPartCount;
     int            mIsDecrypted;
+/*# $_rbox_$_modify_$_huangyonglin: Added by huangyonglin for finding partition easily*/
+    int mIndexPartition;
+/*# $_rbox_$_modify_$ end*/
+    unsigned int   mPendingPartMap;
 
 public:
     DirectVolume(VolumeManager *vm, const fstab_rec* rec, int flags);
@@ -82,6 +86,13 @@ private:
     void handlePartitionAdded(const char *devpath, NetlinkEvent *evt);
     void handlePartitionRemoved(const char *devpath, NetlinkEvent *evt);
     void handlePartitionChanged(const char *devpath, NetlinkEvent *evt);
+/*# $_rbox_$_modify_$_huangyonglin: Added by huangyonglin for added the mass storage funtions.*/
+    void handleUdiskPartitionRemoved(const char *devpath, NetlinkEvent *evt);
+    void handleAllUdiskPartitionRemoved();
+    void handleUdiskDiskAdded(const char *devpath, NetlinkEvent *evt);
+    void handleUdiskPartitionAdded(const char *devpath, NetlinkEvent *evt);
+    void handleDiskForDuoPartitionRemoved(const char *devpath, NetlinkEvent *evt);
+/*# $_rbox_$_modify_$ end*/
 
     int doMountVfat(const char *deviceNode, const char *mountPoint);
 

@@ -49,6 +49,11 @@
 #include "Ntfs.h"
 #include "Process.h"
 #include "cryptfs.h"
+#include "Ext4.h"
+
+#include "blkid/blkid.h"  
+#include "unicode/ucnv.h"
+#define MAX_DEVICE_NODES 32
 
 extern "C" void dos_partition_dec(void const *pp, struct dos_partition *d);
 extern "C" void dos_partition_enc(void *pp, struct dos_partition *d);
@@ -83,6 +88,34 @@ const char *Volume::ASECDIR           = "/mnt/asec";
  * Path to where OBBs are mounted
  */
 const char *Volume::LOOPDIR           = "/mnt/obb";
+
+/* $_rbox_$_modify_$_huangyonglin: added by huangyonglin for adding the funtion to support the mass storage.*/
+/*
+ * Path to where udisk partitions are mounted
+ */
+const char *Volume::SEC_UDISK_PRATITION_DIR          ="/mnt/usb_storage/";
+/*
+ * Path to where udisk partitions are mounted
+ */
+const char *Volume::SEC_UDISK_PRATITION_DIR_EXTERN_0           	= "/mnt/usb_storage/udisk0/";
+const char *Volume::SEC_UDISK_PRATITION_DIR_EXTERN_1           	= "/mnt/usb_storage/udisk1/";
+const char *Volume::SEC_UDISK_PRATITION_DIR_EXTERN_2           	= "/mnt/usb_storage/udisk2/";
+const char *Volume::SEC_UDISK_PRATITION_DIR_EXTERN_3           	= "/mnt/usb_storage/udisk3/";
+const char *Volume::SEC_UDISK_PRATITION_DIR_EXTERN_4           	= "/mnt/usb_storage/udisk4/";
+const char *Volume::SEC_UDISK_PRATITION_DIR_EXTERN_5           	= "/mnt/usb_storage/udisk5/";
+const char *Volume::SEC_UDISK_INTERNAL_DIR           			= "/mnt/udiskint";
+
+/*
+ *	used to create mDiskVolumeLabel
+ */
+int Volume::sDiskVolumeLabelNum = 0;//because add a internal harddisk  ,edited by hyl
+int Volume::mDiskVolumelNum =0;
+
+/*
+ * Property of external SD card's state.
+ */
+const char *Volume::PROP_EXTERNAL_STORAGE_STATE  =  "EXTERNAL_STORAGE_STATE";
+/*# $_rbox_$_modify_$ end */
 
 const char *Volume::BLKID_PATH = "/system/bin/blkid";
 
@@ -122,10 +155,38 @@ Volume::Volume(VolumeManager *vm, const fstab_rec* rec, int flags) {
     mCurrentlyMountedKdev = -1;
     mPartIdx = rec->partnum;
     mRetryMount = false;
-	mSkipAsec =false;
+	mSkipAsec = false;
+
+#ifdef VOLD_BOX
+	/* $_rbox_$_modify_$_huangyonglin: added by huangyonglin for adding the funtion to support the mass storage.*/
+    mDevPath =NULL;
+    mUdiskPartition =new UDisk_Partition_Collection();
+	//just create disk label for udisk;added by zxg
+	memset(mDiskVolumeLabel, 0, sizeof(mDiskVolumeLabel));
+	sprintf(mDiskVolumeLabel, "%s%d", UDISK_VOLUME_LABEL_PREFIX, sDiskVolumeLabelNum);
+	SLOGE("Volume::Volume mDiskVolumeLabel = %s",mDiskVolumeLabel);
+	SLOGE("Volume::Volume mLabel = %s",mLabel);	
+	if(strncmp(mLabel,"usb_storage",strlen("usb_storage"))==0){
+		++sDiskVolumeLabelNum;
+	}
+	/*# $_rbox_$_modify_$ end */
+#endif
 }
 
 Volume::~Volume() {
+#ifdef VOLD_BOX
+/* $_rbox_$_modify_$_huangyonglin: added by huangyonglin for adding the funtion to support the mass storage.*/
+    UDisk_Partition_Collection::iterator it;
+	if(strncmp(mLabel,"usb_storage",strlen("usb_storage"))==0){
+		--sDiskVolumeLabelNum;
+	}
+    for (it = mUdiskPartition->begin(); it != mUdiskPartition->end(); ++it)
+        free(*it);
+    delete mUdiskPartition;
+    free(mDevPath);
+/*# $_rbox_$_modify_$ end */
+#endif
+	
     free(mLabel);
     free(mUuid);
     free(mUserLabel);
@@ -212,10 +273,439 @@ void Volume::notifyStateKernel(int number)
             SLOGI("Call notifyStateKernel No.%d in the file of Volume.cpp", number);
             fclose(fp);
         } else {
-            SLOGI("Error(call No.%d) opening /sys/sd-sdio/rescan in the file of VOlume.cpp", number);
+            SLOGI("Error(call No.%d) opening /sys/sd-sdio/rescan in the file of Volume.cpp", number);
         }
     }
 }
+
+
+/* $_rbox_$_modify_$_huangyonglin: added for adding the mass storage funcion*/
+bool Volume::addPartitionMountFile(char *FilePath) 
+{
+    int i =0;
+    int iret;
+    char szName[200];
+    UDisk_Partition_Collection::iterator it;
+    
+    for(i =0 ;i<MAX_PARTITIONS_FILE_NUM;i++)
+    {
+         sprintf(szName,"%sudisk%d",SEC_UDISK_PRATITION_DIR,i);
+         iret =access(szName, F_OK);
+        if (access(szName, F_OK) != -1) 
+            continue;
+        strcpy(FilePath,szName);
+        SLOGE("############ addPartitionMountFile  %s",szName);
+        return true;
+    }
+    SLOGE("############ addPartitionMountFile error ##################");
+    return false;
+}
+
+bool Volume::addPartitionMountFileSuffix(char *filepath) {
+	int i = 0;
+	char szName[200];
+	UDisk_Partition_Collection::iterator it;
+	
+	if(access(filepath, F_OK) == -1)
+		return true;
+	for(i=1; i<MAX_SAME_PATITION_VOLUME_NAME_COUNTS; ++i) {
+		sprintf(szName,"%s(%d)", filepath, i);
+        if (access(szName, F_OK) != -1) 
+            continue;
+		sprintf(filepath, "%s", szName);
+		SLOGE("############ addPartitionMountFile suffix  %s",filepath);
+		return true;
+	}
+	SLOGE("############ addPartitionMountFile suffix error ##################");
+	return false;
+}
+
+int Volume::addUdiskPartition(int major,int minor) 
+{
+    UDISK_PARTITION_CONFIG *partition;
+    int i =0;
+    UDisk_Partition_Collection::iterator it;
+    char szLable[100];
+    char *pucMountPoint =NULL;
+
+	SLOGE("addUdiskPartition getLabel = %s.",getLabel());
+
+    if(strcmp(getLabel(),"udisk1")==0)
+        pucMountPoint =(char *)SEC_UDISK_PRATITION_DIR_EXTERN_1;
+    else if(strcmp(getLabel(),"udisk2") ==0)
+        pucMountPoint =(char *)SEC_UDISK_PRATITION_DIR_EXTERN_2;
+    else if(strcmp(getLabel(),"udisk3") ==0)
+        pucMountPoint =(char *)SEC_UDISK_PRATITION_DIR_EXTERN_3;
+    else if(strcmp(getLabel(),"udisk4") ==0)
+        pucMountPoint =(char *)SEC_UDISK_PRATITION_DIR_EXTERN_4;     
+    else if(strcmp(getLabel(),"udisk5") ==0)
+        pucMountPoint =(char *)SEC_UDISK_PRATITION_DIR_EXTERN_5;      
+    else if(strcmp(getLabel(),"udiskint") ==0)
+        pucMountPoint =(char *)SEC_UDISK_INTERNAL_DIR;      
+    else
+        pucMountPoint =(char *)SEC_UDISK_PRATITION_DIR_EXTERN_0;
+
+	SLOGE("addUdiskPartition pucMountPoint = %s.",pucMountPoint);
+		
+    for(i =0 ;i<MAX_UDISK_PARTITIONS;i++)
+    {
+        sprintf(szLable,"udisk%d",i);
+
+		for (it = mUdiskPartition->begin(); it != mUdiskPartition->end(); ++it)
+        {
+           if (!strncmp(szLable, (*it)->ucLable,strlen((*it)->ucLable)))
+                break;
+        }
+		
+        if(it == mUdiskPartition->end())
+        {
+            partition = (UDISK_PARTITION_CONFIG *)malloc(sizeof(UDISK_PARTITION_CONFIG)+1);
+            memset(partition,0,sizeof(sizeof(UDISK_PARTITION_CONFIG)+1));
+            strcpy(partition->ucLable,szLable);           
+            sprintf(partition->ucMountPoint,"%s%s",pucMountPoint,szLable);
+            partition->imajor =major;
+            partition->iminor =minor;
+            partition->mState =State_Init;
+    
+            mUdiskPartition->push_back(partition);
+            for (it = mUdiskPartition->begin(); it != mUdiskPartition->end(); ++it)
+                SLOGE("############ addUdiskPartition ucMountPoint=%s mState =%d##################",(*it)->ucMountPoint,(*it)->mState);    
+                    
+            return i;
+        }
+    }
+
+    SLOGE("############ addUdiskPartition error ##################");
+    return -1;
+}
+
+void Volume::RemoveUdiskPartition(const char *Mountpoint) 
+{
+    UDISK_PARTITION_CONFIG *partition;
+    int ii =0;
+    UDisk_Partition_Collection::iterator it;
+    char szLable[100];    
+
+    for (it = mUdiskPartition->begin(); it != mUdiskPartition->end(); ++it)
+    {
+//        SLOGE("############ RemoveUdiskPartition remove =%s##################",(*it)->ucMountPoint);
+       if (!strncmp(Mountpoint, (*it)->ucMountPoint,strlen((*it)->ucMountPoint)))
+       {
+            mUdiskPartition->erase(it);
+            return ;
+       }
+    }
+
+    SLOGE("############ RemoveUdiskPartition error no such  Mountpoint =%s##################",Mountpoint);
+}
+const char *Volume::setDevPath(const char *DevPath)
+{
+    if(mDevPath)
+    {
+        free(mDevPath);
+    }
+    if(DevPath)
+        mDevPath = strdup(DevPath);
+    else
+        mDevPath =NULL;
+    return mDevPath;
+}
+void Volume::displayItem()
+{
+    UDisk_Partition_Collection::iterator it;
+
+    SLOGE("############ displayItem#########");
+    for (it = mUdiskPartition->begin(); it != mUdiskPartition->end(); ++it)
+        SLOGE(" ucMountPoint=%s szLable =%s##################",(*it)->ucMountPoint,(*it)->ucLable);    
+    SLOGE("############ displayItem end#########");
+}
+
+UDISK_PARTITION_CONFIG *Volume::getPartitionState(int major,int minor)
+{
+        UDisk_Partition_Collection::iterator it;
+        int i;
+        int oldState ;
+        for (it = mUdiskPartition->begin(); it != mUdiskPartition->end(); ++it)
+        {
+           if ((*it)->imajor ==major && (*it)->iminor ==minor)
+                {
+                    return (*it);
+                }
+        }
+	return NULL;	
+}
+bool Volume::blkid_get_Device_value(const char *tagname,const char *devname,char *pRetType)
+{
+    bool iRet =false;
+    char *pfstype;
+    blkid_cache cache = NULL;
+    blkid_get_cache(&cache, "/dev/null");
+    pfstype = blkid_get_tag_value(cache, tagname,devname);
+    if(pfstype)
+    {
+        iRet =true;
+        strcpy(pRetType,pfstype);
+        free(pfstype);
+        pfstype =NULL;
+    }
+    return iRet;
+}
+
+int Volume::mountUdiskVol() {
+    dev_t deviceNodes[4];
+    int n, i, rc = 0;
+    char errmsg[255];
+    int istate ;
+
+    istate =getState();
+	SLOGE("mountUdiskVol istate = %d",istate);
+    if (istate == Volume::State_NoMedia) {
+        snprintf(errmsg, sizeof(errmsg),
+                 "Volume %s %s mount failed - no media",
+                 getLabel(), getMountpoint());
+        mVm->getBroadcaster()->sendBroadcast(
+                                         ResponseCode::VolumeMountFailedNoMedia,
+                                         errmsg, false);
+        errno = ENODEV;
+        return -1;
+    } 
+	else if (istate != Volume::State_Idle) {
+        
+        errno = EBUSY;
+//$_rbox_$_modify_$_lijiehong: change to avoid udisk mount failure.
+	 SLOGW("mountVol   errno = EBUSY istate =%d, retry..**************************************",istate);
+        if (getState() == Volume::State_Pending) {
+            mRetryMount = true;
+        }
+//$_rbox_$_modify_$ end
+        return -1;
+    }
+
+        {
+            UDisk_Partition_Collection::iterator it;
+            char szType[50];
+            char szVolume[255];             
+            char devicePath[256];
+            bool bSucceed =false;
+            int iMountRet =false;
+            int bUsbDiskMount =false;
+            int imajor,iminor;
+            char szTempBuf[256];
+            mDiskVolumelNum =0;
+            setState(Volume::State_Checking);
+            CHANGE_ANDROIDFILESYSTEM_TO_READWRITE;
+		//to mkdir the disk mount file
+		SLOGE("mountUdiskVol getLabel = %s.",getLabel());
+		if(!strcmp(getLabel(),"udiskint"))
+		{
+            snprintf(mDiskMountFilePathName, sizeof(mDiskMountFilePathName), "%s", SEC_UDISK_INTERNAL_DIR);
+		}
+        else
+		{
+	        snprintf(mDiskMountFilePathName, sizeof(mDiskMountFilePathName), "%s%s", SEC_UDISK_PRATITION_DIR, mDiskVolumeLabel);
+		}
+		SLOGE("mountUdiskVol mDiskMountFilePathName = %s.",mDiskMountFilePathName);
+
+		mkdir(mDiskMountFilePathName, 0777);
+        chmod(mDiskMountFilePathName,0777);
+        bUsbDiskMount =false;
+		SLOGW("mountVol mDiskVolumelNum =%s",mDiskMountFilePathName);
+
+            for (it = mUdiskPartition->begin(); it != mUdiskPartition->end();it++)
+            {
+                imajor =(*it)->imajor;
+                iminor =(*it)->iminor;
+                
+                sprintf(devicePath, "/dev/block/vold/%d:%d", imajor,iminor);
+                
+                SLOGE("%s 1111being considered for volume %s %s ", devicePath, (*it)->ucFilePathName, (*it)->ucLable);
+                memset(szType,0,sizeof(szType));
+                memset(szVolume,0,sizeof(szVolume));
+                blkid_get_Device_value("TYPE",devicePath,szType);
+				SLOGE("#######mUdiskPartition size: %d  szType =%s",mUdiskPartition->size(),szType);
+              //  if(mUdiskPartition->size() >2)
+				{
+
+	                if(!strcmp(szType,"ntfs"))
+	                {
+	                    blkid_get_Device_value("LABEL",devicePath,szVolume);
+	                    sprintf((*it)->ucFilePathName, "%s/%s", mDiskMountFilePathName, szVolume);
+	                }
+	                else
+	                    sprintf((*it)->ucFilePathName, "%s/%s", mDiskMountFilePathName, (*it)->ucLable);        
+	                SLOGE("ucFilePathName:%s  szType=%s", (*it)->ucFilePathName,szType);
+	                
+	                //if(addPartitionMountFile((*it)->ucFilePathName) ==false)
+	                //    break;
+	                //now just try to get ntfs partition label
+	
+	                if(addPartitionMountFileSuffix((*it)->ucFilePathName) == false)
+	                	break;
+	                SLOGE("FilePathName:%s  szType=%s", (*it)->ucFilePathName,szType);
+	                mkdir((*it)->ucFilePathName, 0700);
+        	}
+        	//else
+        	 //  sprintf((*it)->ucFilePathName, "%s", mDiskMountFilePathName);     
+                errno = 0;
+                iMountRet =false;
+ 
+
+                if(!strcmp(szType,"vfat"))
+                {
+                    if (Fat::doMount(devicePath, (*it)->ucFilePathName, false, false, false,
+                         1000, 1015, 0002, true) ==0)
+                    {
+                            iMountRet =true;
+                            bUsbDiskMount =true;
+                    }
+                }
+                else if(!strcmp(szType,"ntfs"))
+                {
+                    if(Ntfs::doMount(devicePath, (*it)->ucFilePathName, false, 1000,1000)==0)
+                    {
+                            iMountRet =true;
+                            bUsbDiskMount =true;
+                    }                       
+                }
+                else if(!strcmp(szType,"ext2"))
+                {
+                    if(Ext2::doMount(devicePath, (*it)->ucFilePathName, false, false,false)==0)
+                    {
+                            iMountRet =true;
+                            bUsbDiskMount =true;
+                    }  
+                                 
+                }
+
+                else if(!strcmp(szType,"ext3"))
+                {
+                    if(Ext3::doMount(devicePath, (*it)->ucFilePathName, false, false,false)==0)
+                    {
+                            iMountRet =true;
+                            bUsbDiskMount =true;
+                    }  
+                                 
+                }
+                                
+                 else if(!strcmp(szType,"ext4"))
+                {
+                    if(Ext4::doMount(devicePath, (*it)->ucFilePathName, false, false,false)==0)
+                    {
+                            iMountRet =true;
+                            bUsbDiskMount =true;
+                    }                       
+                }
+
+               
+                if(iMountRet ==false)
+                {
+                   // if(mUdiskPartition->size() >2)
+                    	rmdir((*it)->ucFilePathName);
+                    SLOGE("earse succed!!!");
+                    SLOGE("%s failed to mount via %s (%s)",devicePath,szType,strerror(errno));
+                }
+                else
+                {
+                    SLOGE("mount vfat %s succed!!!",(*it)->ucFilePathName);
+                    bSucceed =true;
+                    //mDiskVolumelMinors[mDiskVolumelNum++] =iminor;
+                }
+            }
+            if(bSucceed)
+            {
+                CHANGE_ANDROIDFILESYSTEM_TO_READONLY;
+                setState(Volume::State_Mounted);
+                return 0;
+             }
+            else
+            {
+                if(bUsbDiskMount==false)
+                    rmdir(mDiskMountFilePathName);
+                CHANGE_ANDROIDFILESYSTEM_TO_READONLY;
+                setState(Volume::State_Idle);
+                setDevPath(NULL);
+            }
+        }
+    return -1;
+}
+
+int Volume::unmountUdiskVol(const char *label, bool force)
+{
+    int i;
+    char Mountpoint[55];
+    int istate ;
+    UDisk_Partition_Collection::iterator it;
+
+    istate =getState();
+
+    if (istate == Volume::State_NoMedia) {
+        SLOGW("Attempt to unmount  failed State_NoMedia ");
+        errno = ENODEV;
+        return -1;
+    }
+
+    if (istate != Volume::State_Mounted) {
+        SLOGW("Attempt to unmount volume which isn't mounted (%d)\n",istate);
+        errno = EBUSY;
+        return -1;
+    }
+
+
+    setState(Volume::State_Unmounting);
+        CHANGE_ANDROIDFILESYSTEM_TO_READWRITE;
+    SLOGE("1********************************");
+    if(!strcmp(getLabel(),"udiskint"))
+    {
+        for (it = mUdiskPartition->begin(); it != mUdiskPartition->end(); ++it)
+        {
+            SLOGE("######### del %s", (*it)->ucFilePathName);
+            /*
+            * Finally, unmount the actual block device from the staging dir
+            */
+            if (0 !=doUnmount((*it)->ucFilePathName, force)) {
+                SLOGE("Failed to unmount %s (%s)", (*it)->ucFilePathName, strerror(errno));
+                //goto out_nomedia;
+            }
+            else
+            {
+                SLOGI("%s unmounted sucessfully", (*it)->ucFilePathName);
+            }
+             rmdir((*it)->ucFilePathName);
+        }
+    }
+    else
+    {
+        for (it = mUdiskPartition->begin(); it != mUdiskPartition->end();)
+        {
+            SLOGE("######### del %s", (*it)->ucFilePathName);
+            /*
+            * Finally, unmount the actual block device from the staging dir
+            */
+            if (0 !=doUnmount((*it)->ucFilePathName, force)) {
+                SLOGE("Failed to unmount %s (%s)", (*it)->ucFilePathName, strerror(errno));
+            }
+            else
+            {
+                SLOGI("%s unmounted sucessfully", (*it)->ucFilePathName);
+            }
+            rmdir((*it)->ucFilePathName);
+
+            it =mUdiskPartition->erase(it);
+
+            if(it ==mUdiskPartition->end())
+                break;
+        }
+    }
+    SLOGE("2********************************");
+
+        rmdir(mDiskMountFilePathName);
+    CHANGE_ANDROIDFILESYSTEM_TO_READONLY;
+        system("sync");
+    setState(Volume::State_Idle);
+    return 0;
+}
+/* $_rbox_$_modify_$ end */
+
 
 
 void Volume::setState(int state) {
@@ -332,7 +822,7 @@ bool Volume::isMountpointMounted(const char *path) {
     char rest[256];
     FILE *fp;
     char line[1024];
-
+	//SLOGE("isMountpointMounted path %s.",path);
     if (!(fp = fopen("/proc/mounts", "r"))) {
         SLOGE("Error opening /proc/mounts (%s)", strerror(errno));
         return false;
@@ -341,6 +831,12 @@ bool Volume::isMountpointMounted(const char *path) {
     while(fgets(line, sizeof(line), fp)) {
         line[strlen(line)-1] = '\0';
         sscanf(line, "%255s %255s %255s\n", device, mount_path, rest);
+		//SLOGE("	device=%s,mount_path=%s,rest=%s.",device, mount_path, rest);
+#ifndef VOLD_BOX
+        if (!strcmp(device, "tmpfs")) {
+			continue;
+        }
+#endif
         if (!strcmp(mount_path, path)) {
             fclose(fp);
             return true;
@@ -350,7 +846,6 @@ bool Volume::isMountpointMounted(const char *path) {
     fclose(fp);
     return false;
 }
-
 int Volume::mountVol() {
     dev_t deviceNodes[4];
     int n, i, rc = 0;
@@ -366,16 +861,27 @@ int Volume::mountVol() {
     char encrypt_progress[PROPERTY_VALUE_MAX];
     char has_ums[PROPERTY_VALUE_MAX];
 
-    property_get("vold.decrypt", decrypt_state, "");
-    property_get("vold.encrypt_progress", encrypt_progress, "");
-    property_get("ro.factory.hasUMS",has_ums, "false");
+#ifdef VOLD_BOX
+/* $_rbox_$_modify_$_huangyonglin: added for adding the mass storage funcion*/
+	if(strncmp(getLabel(),"usb_storage",strlen("usb_storage"))==0)
+	{
+	    SLOGW("mountVol udisk###############label =%s ",getLabel());
+	    return mountUdiskVol();
+	}
+/* $_rbox_$_modify_$ end */
+#endif
+
+    property_get("vold.decrypt", decrypt_state, "");/* getprop vold.decrypt == NULL*/
+    property_get("vold.encrypt_progress", encrypt_progress, "");/* getprop vold.encrypt_progress == NULL */
+    property_get("ro.factory.hasUMS",has_ums, "false");/* getprop ro.factory.hasUMS == true */
 
     char getSupNtfs[PROPERTY_VALUE_MAX];
-    property_get("ro.factory.storage_suppntfs", getSupNtfs, "true");
+    property_get("ro.factory.storage_suppntfs", getSupNtfs, "true");/* getprop ro.factory.storage_suppntfs == true */
     bool isSupNtfs = !strcmp(getSupNtfs, "true");
     /* Don't try to mount the volumes if we have not yet entered the disk password
      * or are in the process of encrypting.
      */
+    /* D/Vold    (  136): Volume internal_sd state changing 2 (Pending) -> 1 (Idle-Unmounted)*/
     if ((getState() == Volume::State_NoMedia) ||
         ((!strcmp(decrypt_state, "1") || (encrypt_progress[0] && encrypt_progress[2] != '0')) && providesAsec)) {
         snprintf(errmsg, sizeof(errmsg),
@@ -406,13 +912,17 @@ int Volume::mountVol() {
         SLOGE("Failed to get device nodes (%s)\n", strerror(errno));
         return -1;
     }
+	else
+	{
+		SLOGE("deviceNodes[0]= 0x%08x,[1]= 0x%08x,[2]= 0x%08x,[3]= 0x%08x",deviceNodes[0],deviceNodes[1],deviceNodes[2],deviceNodes[3]);
+	}
 
     /* If we're running encrypted, and the volume is marked as encryptable and nonremovable,
      * and also marked as providing Asec storage, then we need to decrypt
      * that partition, and update the volume object to point to it's new decrypted
      * block device
      */
-    property_get("ro.crypto.state", crypto_state, "");
+    property_get("ro.crypto.state", crypto_state, "");/* getprop ro.crypto.state == unencrypted */
     if (providesAsec &&
         ((flags & (VOL_NONREMOVABLE | VOL_ENCRYPTABLE))==(VOL_NONREMOVABLE | VOL_ENCRYPTABLE)) &&
         !strcmp(crypto_state, "encrypted") && !isDecrypted()) {
@@ -454,6 +964,11 @@ int Volume::mountVol() {
             SLOGE("Failed to get device nodes (%s)\n", strerror(errno));
             return -1;
         }
+		else
+		{
+			SLOGE("deviceNodes[0]= 0x%08x,[1]= 0x%08x,[2]= 0x%08x,[3]= 0x%08x",deviceNodes[0],deviceNodes[1],deviceNodes[2],deviceNodes[3]);
+		}
+
     }
 
     for (i = 0; i < n; i++) {
@@ -462,6 +977,7 @@ int Volume::mountVol() {
         sprintf(devicePath, "/dev/block/vold/%d:%d", major(deviceNodes[i]),
                 minor(deviceNodes[i]));
 
+		/* /dev/block/vold/179:14 being considered for volume internal_sd,1 */
         SLOGI("%s being considered for volume %s,%d\n ", devicePath, getLabel(),isSupNtfs);
 
         errno = 0;
@@ -483,23 +999,29 @@ int Volume::mountVol() {
         int gid;
 
         if(!strcmp("true",has_ums))//has UMS function ,set group to AID_SDCARD_RW
-	{
-           if (Fat::doMount(devicePath, getMountpoint(), false, false, false,
-        	        AID_SYSTEM,AID_SDCARD_RW, 0007, true)) {
-        		SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
-        	if(providesAsec){
-		     mSkipAsec = true;
-	             SLOGE("---------set mSkipAsec to disable app2sd because mount Vfat fail for %s, mountpoint =%s",getLabel(),getMountpoint());
-		}
-                if(Ntfs::doMount(devicePath, getMountpoint(), false,AID_SYSTEM,AID_SDCARD_RW)){ 
-                   SLOGE("%s failed to mount via VNTFS (%s)\n", devicePath, strerror(errno));
-                   continue;
-                 }
-               }else   //mount flash as fat succeed
-	       {
-		  mSkipAsec = false;
-		  SLOGE("---------set mSkipAsec to enable app2sd because mount Vfat succeed for %s, mountpoint =%s",getLabel(),getMountpoint());
-		}
+		{
+			/* /dev/block/vold/179:14 /mnt/internal_sd vfat 
+			 * rw,dirsync,nosuid,nodev,noexec,relatime,uid=1000,gid=1015,fmask=0007,dmask=0007,allow_utime=0020,codepage=437,iocharset=iso8859-1,shortname=mixed,utf8,errors=remount-ro 0 0
+			 * 挂载user分区到/mnt/internal_sd  user -> /dev/block/mmcblk0p14
+			 */
+           	if (Fat::doMount(devicePath, getMountpoint(), false, false, false,
+        	  	AID_SYSTEM,AID_SDCARD_RW, 0007, true)) {
+	        	SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
+	        	if(providesAsec){
+			     	mSkipAsec = true;
+		             SLOGE("---------set mSkipAsec to disable app2sd because mount Vfat fail for %s, mountpoint =%s",getLabel(),getMountpoint());
+				}
+	      		if(Ntfs::doMount(devicePath, getMountpoint(), false,AID_SYSTEM,AID_SDCARD_RW)){ 
+	            	SLOGE("%s failed to mount via VNTFS (%s)\n", devicePath, strerror(errno));
+	            	continue;
+	            }
+			}
+			else   //mount flash as fat succeed
+	    	{
+		  		mSkipAsec = false;
+				// ---------set mSkipAsec to enable app2sd because mount Vfat succeed for internal_sd, mountpoint =/mnt/internal_sd
+		  		SLOGE("---------set mSkipAsec to enable app2sd because mount Vfat succeed for %s, mountpoint =%s",getLabel(),getMountpoint());
+			}
 	    }
 	    else //do not has ums,set group to AID_MEDIA_RW
 	    {
@@ -507,13 +1029,13 @@ int Volume::mountVol() {
                		AID_SYSTEM,AID_MEDIA_RW, 0007, true)) {
             	        SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
     
-			if(Ntfs::doMount(devicePath, getMountpoint(), false,AID_SYSTEM,AID_MEDIA_RW)){
+				if(Ntfs::doMount(devicePath, getMountpoint(), false,AID_SYSTEM,AID_MEDIA_RW)){
                			SLOGE("%s failed to mount via VNTFS (%s)\n", devicePath, strerror(errno));
 		       		continue;
 		     	}
         	}
 	    }   
-
+		//blkid identified as /dev/block/vold/179:14: LABEL="ROCKCHIP" UUID="0FE6-0808" TYPE="vfat"
         extractMetadata(devicePath);
 
         if (providesAsec&&!mSkipAsec&& mountAsecExternal() != 0) {
@@ -528,7 +1050,7 @@ int Volume::mountVol() {
         property_set("ctl.start", service);
 
         setState(Volume::State_Mounted);
-        mCurrentlyMountedKdev = deviceNodes[i];
+        mCurrentlyMountedKdev = deviceNodes[i];/* 179:14 */
         return 0;
     }
 
@@ -737,7 +1259,7 @@ int Volume::initializeMbr(const char *deviceNode) {
 }
 
 /*
- * Use blkid to extract UUID and label from device, since it handles many
+ * Use blkid to extract 提取 UUID and label from device, since it handles many
  * obscure edge cases around partition types and formats. Always broadcasts
  * updated metadata values.
  */
@@ -759,8 +1281,9 @@ int Volume::extractMetadata(const char* devicePath) {
     char line[1024];
     char value[128];
     if (fgets(line, sizeof(line), fp) != NULL) {
+		//blkid identified as /dev/block/vold/179:14: LABEL="ROCKCHIP" UUID="0FE6-0808" TYPE="vfat"
         ALOGD("blkid identified as %s", line);
-
+		
         char* start = strstr(line, "UUID=");
         if (start != NULL && sscanf(start + 5, "\"%127[^\"]\"", value) == 1) {
             setUuid(value);

@@ -65,6 +65,9 @@ public:
     static const int VolumeDiskInserted            = 630;
     static const int VolumeDiskRemoved             = 631;
     static const int VolumeBadRemoval              = 632;
+/* $_rbox_$_modify_$_huangyonglin: added for adding the partition command */
+    static const int VolumePartitionAdded          = 633;
+/* $_rbox_$_modify_$ end */
 
     static int convertFromErrno();
 };

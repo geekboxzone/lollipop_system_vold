@@ -54,8 +54,12 @@ int NetlinkManager::start() {
 
     memset(&nladdr, 0, sizeof(nladdr));
     nladdr.nl_family = AF_NETLINK;
-    nladdr.nl_pid = getpid();
-    nladdr.nl_groups = 0xffffffff;
+    nladdr.nl_pid = getpid();/* 为接收或发送消息的进程的 ID，如果希望内核处理消息为多播消息，
+    						  * 就把该字段设置为 0，否则设置为处理消息的进程 ID； 
+    						  */
+    nladdr.nl_groups = 0xffffffff;/* 用于指定多播组，bind 函数用于把调用进程加入到该字段指定 
+    							   * 的多播组，如果设置为 0，表示调用者不加入任何多播组。 
+    							   */
 
     if ((mSock = socket(PF_NETLINK,
                         SOCK_DGRAM,NETLINK_KOBJECT_UEVENT)) < 0) {

@@ -55,17 +55,18 @@ PathInfo::~PathInfo()
 bool PathInfo::match(const char *path)
 {
     switch (patternType) {
-    case prefix:
-    {
-        bool ret = (strncmp(path, pattern, strlen(pattern)) == 0);
-        if (!warned && ret && (strlen(pattern) != strlen(path))) {
-            SLOGW("Deprecated implied prefix pattern detected, please use '%s*' instead", pattern);
-            warned = true;
-        }
-        return ret;
-    }
-    case wildcard:
-        return fnmatch(pattern, path, 0) == 0;
+	    case prefix:
+	    {
+	        bool ret = (strncmp(path, pattern, strlen(pattern)) == 0);
+	        if (!warned && ret && (strlen(pattern) != strlen(path))) {
+	            SLOGW("Deprecated implied prefix pattern detected, please use '%s*' instead", pattern);
+	            warned = true;
+	        }
+	        return ret;
+	    }
+		
+	    case wildcard:
+	        return fnmatch(pattern, path, 0) == 0;
     }
     SLOGE("Bad matching type");
     return false;
@@ -73,9 +74,12 @@ bool PathInfo::match(const char *path)
 
 DirectVolume::DirectVolume(VolumeManager *vm, const fstab_rec* rec, int flags) :
         Volume(vm, rec, flags) {
-    mPaths = new PathCollection();
-    for (int i = 0; i < MAX_PARTITIONS; i++)
+
+	mPaths = new PathCollection();
+
+	for (int i = 0; i < MAX_PARTITIONS; i++)
         mPartMinors[i] = -1;
+	
     mPendingPartCount = 0;
     mDiskMajor = -1;
     mDiskMinor = -1;
@@ -88,12 +92,32 @@ DirectVolume::DirectVolume(VolumeManager *vm, const fstab_rec* rec, int flags) :
     }
 
     char mount[PATH_MAX];
-
+	char usb_mount[PATH_MAX];
+#ifndef VOLD_BOX
     snprintf(mount, PATH_MAX, "%s/%s", Volume::MEDIA_DIR, rec->label);
     mMountpoint = strdup(mount);
     snprintf(mount, PATH_MAX, "%s/%s", Volume::FUSE_DIR, rec->label);
     mFuseMountpoint = strdup(mount);
+#endif
 
+#ifdef VOLD_BOX	
+    snprintf(mount, PATH_MAX, "%s/%s", Volume::MEDIA_DIR, rec->label);/* mount = /mnt/usb_storage */
+/* $_rbox_$_modify_$_begin_huangyonglin*/	
+    //mMountpoint = strdup(rec->label);
+	if(strncmp(rec->label,"usb_storage",strlen("usb_storage"))==0)
+	{
+		snprintf(usb_mount, PATH_MAX, "%s/%s", mount, mDiskVolumeLabel);
+    }
+	else
+	{
+	    snprintf(usb_mount, PATH_MAX, "%s/%s", Volume::MEDIA_DIR, rec->label);
+	}
+    mMountpoint = strdup(usb_mount);/* /mnt/usb_storage/UDISKX */
+    snprintf(mount, PATH_MAX, "%s/%s", Volume::FUSE_DIR, rec->label);
+    mFuseMountpoint = strdup(mount);
+	ALOGE("DirectVolume mFuseMountpoint:%s,mMountpoint:%s.",mFuseMountpoint,mMountpoint);
+/* $_rbox_$_modify_$_end*/	
+#endif
     setState(Volume::State_NoMedia);
 }
 
@@ -129,9 +153,261 @@ void DirectVolume::handleVolumeShared() {
 void DirectVolume::handleVolumeUnshared() {
     setState(Volume::State_Idle);
 }
+/* $_rbox_$_modify_$_huangyonglin: added by huangyonglin for adding the funtion to support the mass storage.*/
+void DirectVolume::handleDiskForDuoPartitionRemoved(const char *devpath, NetlinkEvent *evt) {
+    int major = atoi(evt->findParam("MAJOR"));
+    int minor = atoi(evt->findParam("MINOR"));
+    char msg[255];
+    char devicePath[255];
+
+    sprintf(devicePath, "/dev/block/vold/%d:%d", major,
+            minor+mDiskNumParts);
+    
+    SLOGD("handleDiskForDuoPartitionRemoved Volume %s %s disk %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
+    snprintf(msg, sizeof(msg), "Volume %s %s disk removed (%d:%d)",
+             getLabel(), getMountpoint(), major, minor);
+    mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskRemoved,
+                                             msg, false);
+
+	//to remove disk mount file.
+	//maybe it's a ntfs udisk, in other words, the whole disk is the unique partition,not any logical partitions.
+	//just remove any partitions in the disk.
+	handleAllUdiskPartitionRemoved();
+    CHANGE_ANDROIDFILESYSTEM_TO_READWRITE;
+	if(rmdir(mDiskMountFilePathName)){
+		SLOGE("RemoveUdiskMountFile %s Failed! errno = %s", mDiskMountFilePathName, strerror(errno));
+	}
+	CHANGE_ANDROIDFILESYSTEM_TO_READONLY;
+    sprintf(devicePath, "/dev/block/vold/%d:%d", major,
+            minor);
+    SLOGE("handleDiskRemoved,ready to unlink: %s",devicePath);
+    if ( 0 != unlink(devicePath) ) {
+        SLOGE("Failed to unlink %s or it has been unlinked!",devicePath);
+    }
+    setState(Volume::State_NoMedia);
+    setDevPath(NULL);
+}
+void DirectVolume::handleUdiskPartitionRemoved(const char *devpath, NetlinkEvent *evt)
+{
+    int major = atoi(evt->findParam("MAJOR"));
+    int minor = atoi(evt->findParam("MINOR"));
+	char devicePath[255];
+    const char *pMountpoint =NULL;
+    int istate;
+    UDISK_PARTITION_CONFIG *pUdiskPartiton;
+
+    pUdiskPartiton =getPartitionState(major,minor);
+    if(pUdiskPartiton ==NULL)
+        return  ;
+    pMountpoint =pUdiskPartiton->ucMountPoint;
+    SLOGD("Volume  %s partition %d:%d removed", pUdiskPartiton->ucMountPoint, major, minor);
+
+    /*
+    * Finally, unmount the actual block device from the staging dir
+    */
+    if (0 !=doUnmount(pUdiskPartiton->ucFilePathName, true)) {
+        SLOGE("handleUdiskPartitionRemoved Failed to unmount %s (%s)", pUdiskPartiton->ucFilePathName, strerror(errno));
+    }
+    else
+        SLOGI("handleUdiskPartitionRemoved %s unmounted sucessfully ", pUdiskPartiton->ucFilePathName);
+    
+	CHANGE_ANDROIDFILESYSTEM_TO_READWRITE;
+    if(pUdiskPartiton->ucFilePathName)
+        rmdir(pUdiskPartiton->ucFilePathName);
+	CHANGE_ANDROIDFILESYSTEM_TO_READONLY;
+    RemoveUdiskPartition(pMountpoint);
+    sprintf(devicePath, "/dev/block/vold/%d:%d", major,
+            minor);
+    SLOGE("handleUdiskPartitionRemoved handlePartitionRemoved,ready to unlink: %s",devicePath);
+    if ( 0 != unlink(devicePath) ) {
+        SLOGE("handleUdiskPartitionRemoved Failed to unlink %s",devicePath);
+    }
+}
+void DirectVolume::handleAllUdiskPartitionRemoved() {
+	if(!mUdiskPartition || mUdiskPartition->empty())
+		return;
+
+	char devicePath[255];
+	const char *pMountpoint =NULL;
+	UDISK_PARTITION_CONFIG *pUdiskPartiton;
+	UDisk_Partition_Collection::iterator it;
+	int major;
+	int minor;
+	while(!mUdiskPartition->empty()) {
+		SLOGD("there are %d partitions in the disk still", mUdiskPartition->size());
+		it = mUdiskPartition->begin();
+		pUdiskPartiton = *it;
+		major = pUdiskPartiton->imajor;
+		minor = pUdiskPartiton->iminor;
+		pMountpoint = pUdiskPartiton->ucMountPoint;
+		SLOGD("Volume  %s partition %d:%d removed", pUdiskPartiton->ucMountPoint, major, minor);
+
+		/*
+		* Finally, unmount the actual block device from the staging dir
+		*/
+		if (0 !=doUnmount(pUdiskPartiton->ucFilePathName, true)) {
+			SLOGE("handleUdiskPartitionRemoved Failed to unmount %s (%s)", pUdiskPartiton->ucFilePathName, strerror(errno));
+		}
+		else
+			SLOGI("handleUdiskPartitionRemoved %s unmounted sucessfully ", pUdiskPartiton->ucFilePathName);
+		
+		CHANGE_ANDROIDFILESYSTEM_TO_READWRITE;
+		if(pUdiskPartiton->ucFilePathName)
+			rmdir(pUdiskPartiton->ucFilePathName);
+		CHANGE_ANDROIDFILESYSTEM_TO_READONLY;
+		//RemoveUdiskPartition(pMountpoint);
+		sprintf(devicePath, "/dev/block/vold/%d:%d", major,
+				minor);
+		SLOGE("handleUdiskPartitionRemoved handlePartitionRemoved,ready to unlink: %s",devicePath);
+		if ( 0 != unlink(devicePath) ) {
+			SLOGE("handleUdiskPartitionRemoved Failed to unlink %s",devicePath);
+		}
+		mUdiskPartition->erase(it);
+		
+	}
+}
+
+
+void DirectVolume::handleUdiskDiskAdded(const char *devpath, NetlinkEvent *evt) {
+    mDiskMajor = atoi(evt->findParam("MAJOR"));
+    mDiskMinor = atoi(evt->findParam("MINOR"));
+
+    const char *tmp = evt->findParam("NPARTS");
+	SLOGD("handleUdiskDiskAdded NPARTS = %s.",tmp);
+	
+    if (tmp) {
+        mDiskNumParts = atoi(tmp);
+    } else {
+        SLOGW("Kernel block uevent missing 'NPARTS'");
+        mDiskNumParts = 1;
+    }
+/*ifdef DISABLE_INTERNAL_DISK	  
+		if (!strcmp(getLabel(),"udiskint"))
+			handleToWriteLunfile();
+endif DISABLE_INTERNAL_DISK*/
+    char msg[255];
+    int iPartNum;
+    int partmask = 0;
+    int i;
+    for (i = 1; i <= mDiskNumParts; i++) {
+        partmask |= (1 << i);
+    }
+    mPendingPartMap = partmask;
+	SLOGD("handleUdiskDiskAdded mPendingPartMap = 0x%08x.",partmask);
+    
+    if (mDiskNumParts == 0) {
+        mPartMinors[0] = mDiskMinor;
+#ifdef PARTITION_DEBUG
+        SLOGD("Dv::handleUdiskDiskAdded - No partitions - good to go son!");
+#endif
+        setState(Volume::State_Idle);
+
+        snprintf(msg, sizeof(msg), "Volume %s %s disk inserted (%d:%d) state %d",
+                 getLabel(), getMountpoint(), mDiskMajor, mDiskMinor, Volume::State_Idle);
+        mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskInserted,
+                                                 msg, false);
+         iPartNum =addUdiskPartition(mDiskMajor,mDiskMinor);
+        if( -1 ==iPartNum)
+            return ;
+    } else {
+#ifdef PARTITION_DEBUG
+        SLOGD("Dv::diskIns - waiting for %d partitions (mask 0x%x)",
+             mDiskNumParts, mPendingPartMap);
+#endif
+        setState(Volume::State_Pending);
+		mIndexPartition =0;
+		mDiskVolumelMinors[0] = mDiskMinor;
+	
+        snprintf(msg, sizeof(msg), "Volume %s %s disk inserted (%d:%d) state %d",
+                 getLabel(), getMountpoint(), mDiskMajor, mDiskMinor, Volume::State_Pending);
+        mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskInserted,
+                                                 msg, false);
+    }
+}
+
+void DirectVolume::handleUdiskPartitionAdded(const char *devpath, NetlinkEvent *evt) {   //add to process usb partition add message by cc
+    int major = atoi(evt->findParam("MAJOR"));
+    int minor = atoi(evt->findParam("MINOR"));
+
+    int part_num;
+    char msg[255];
+    int iPartNum,ii =0;
+
+    const char *tmp = evt->findParam("PARTN");
+	SLOGD("handleUdiskPartitionAdded NPARTS = part_num = %s.",tmp);
+    if (tmp) {
+        part_num = atoi(tmp);
+    } else {
+        SLOGW("Kernel block uevent missing 'PARTN'");
+        part_num = 1;
+    }
+	
+    mIndexPartition++;
+ 	#ifdef PARTITION_DEBUG   
+    SLOGW("##################handleUdiskPartitionAdded part_num =%d    mDiskNumParts =%d   mIndexPartition =%d",
+    	part_num,mDiskNumParts,mIndexPartition);
+	#endif
+    /*part_num = 1;//only mount partition 1 add by cc
+    if (part_num > mDiskNumParts) {
+        mDiskNumParts = part_num;
+    }*/
+
+	SLOGD("handleUdiskPartitionAdded major = %d mDiskMajor = %d.",major,mDiskMajor);
+    if (major != mDiskMajor) {
+        SLOGE("Partition '%s' has a different major than its disk!", devpath);
+        return;
+    }
+    mPartMinors[part_num -1] = minor;
+	SLOGE("handleUdiskPartitionAdded mPartMinors[0]= %d,mPartMinors[1]= %d,mPartMinors[2]= %d,mPartMinors[3]= %d",
+		mPartMinors[0],mPartMinors[1],mPartMinors[2],mPartMinors[3]);
+    
+    //mPendingPartMap &= ~(1 << part_num);    
+    mPendingPartMap &= ~(1 << mIndexPartition);    
+ #ifdef PARTITION_DEBUG   
+     SLOGD("Dv:partAdd: part_num = %d, minor = %d,mPendingPartMap =%x,mDiskNumParts=%d", part_num, minor,mPendingPartMap,mDiskNumParts);
+ #endif
+    iPartNum =addUdiskPartition(major,minor);
+    if( -1 ==iPartNum)
+    return ;
+
+	if (mRetryMount == true) 
+		SLOGD("mRetryMount = true.");
+	else
+		SLOGD("mRetryMount = false.");	
+
+    if (!mPendingPartMap) {        //do not care about the mask ,just send PatritionAdd message to mountservice add by cc
+#ifdef PARTITION_DEBUG
+        SLOGD("Dv:partAdd: Got all partitions - ready to rock!  curstate =%d",getState());
+#endif
+
+     if (getState() != Volume::State_Formatting)
+        {
+            setState(Volume::State_Idle);
+//$_rbox_$_modify_$_lijiehong: change to avoid udisk mount failure.
+            if (mRetryMount == true) {
+                SLOGD("!!!! mount failed,and need to retry mountVol()!!!!");
+                mRetryMount = false;
+                mountVol();
+            }else{
+                snprintf(msg, sizeof(msg), "Volume %s %s partition added (%d:%d)",
+                       getLabel(), getMountpoint(), major, minor);
+                SLOGD(" ---------!!!! no retry ,send msg(%s) --------!!!!",msg);
+                mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumePartitionAdded,
+                                                msg, false);
+            }
+//$_rbox_$_modify_$ end
+        }
+    } else {
+#ifdef PARTITION_DEBUG
+        SLOGD("Dv:partAdd: pending mask now = 0x%x", mPendingPartMap);
+#endif
+    }
+}
+/* $_rbox_$_modify_$ end */
 
 int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
     const char *dp = evt->findParam("DEVPATH");
+	SLOGD("DEVPATH = %s.",dp);
 
     PathCollection::iterator  it;
     for (it = mPaths->begin(); it != mPaths->end(); ++it) {
@@ -139,6 +415,7 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
             /* We can handle this disk */
             int action = evt->getAction();
             const char *devtype = evt->findParam("DEVTYPE");
+			SLOGD("DEVTYPE = %s.",devtype);
 
             if (action == NetlinkEvent::NlActionAdd) {
                 int major = atoi(evt->findParam("MAJOR"));
@@ -152,12 +429,44 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
                     SLOGE("Error making device node '%s' (%s)", nodepath,
                                                                strerror(errno));
                 }
-                if (!strcmp(devtype, "disk")) {
-			char *p1 = basename(dp);
-			if (strstr(p1,"boot0") != 0 || strstr(p1,"boot1") != 0) {
-				SLOGD("skia mmc boot disk ! path : %s",dp);
-				continue;
-			}
+
+#ifdef VOLD_BOX		
+/* $_FOR_ROCKCHIP_RBOX_$  added by huangyonglin for supporting the mass storage*/
+				SLOGD("getLabel = %s,devtype = %s,getDevPath = %s.",getLabel(),devtype,getDevPath());
+                if (strncmp(getLabel(),"usb_storage",strlen("usb_storage"))==0){
+                    if (!strcmp(devtype, "disk")) 
+                    {
+                        if(getDevPath() == NULL)
+                        {
+                            setDevPath(dp);
+                            handleUdiskDiskAdded(dp, evt);
+                        }
+                        else
+                        {
+                            return -1;
+                        }
+                    } 
+                    else 
+                    {
+                        char *pDevPah =(char *)getDevPath();
+                        if (!strncmp(dp, pDevPah, strlen(pDevPah)))
+                        {
+                            handleUdiskPartitionAdded(dp,evt);
+                        }
+                        else
+                        {
+                            return -1;
+                        }
+                    }
+                }
+/* $_rbox_$_modify_$ end */
+#endif				
+				else if (!strcmp(devtype, "disk")) {
+					char *p1 = basename(dp);
+					if (strstr(p1,"boot0") != 0 || strstr(p1,"boot1") != 0) {
+						SLOGD("skia mmc boot disk ! path : %s",dp);
+						continue;
+					}
                     handleDiskAdded(dp, evt);
                 } else {
                     handlePartitionAdded(dp, evt);
@@ -173,7 +482,25 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
                                                          msg, false);
                 }
             } else if (action == NetlinkEvent::NlActionRemove) {
-                if (!strcmp(devtype, "disk")) {
+#ifdef VOLD_BOX	            
+           	 	/* $_FOR_ROCKCHIP_RBOX_$  added by huangyonglin for supporting the mass storage*/
+                if (strncmp(getLabel(),"usb_storage",strlen("usb_storage"))==0)
+                {
+                    char *pDevPah =(char *)getDevPath();
+                    if(pDevPah ==NULL)
+                        return -1;
+                    else if(strncmp(dp, pDevPah, strlen(pDevPah)))
+                        return -1;
+        	           SLOGE("NlActionRemove pDevPah=%s,devtype=%s",pDevPah,devtype);
+                    if (!strcmp(devtype, "disk")) {
+                        handleDiskForDuoPartitionRemoved(dp, evt);
+                    } else {
+                        handleUdiskPartitionRemoved(dp, evt);
+                    }            	    
+            	}
+				/* $_rbox_$_modify_$ end */
+#endif				
+                if (!strcmp(devtype, "disk")) {					
                     handleDiskRemoved(dp, evt);
                 } else {
                     handlePartitionRemoved(dp, evt);
@@ -241,7 +568,7 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
 
     int part_num;
 
-    const char *tmp = evt->findParam("PARTN");
+    const char *tmp = evt->findParam("PARTN");/*这个主分区里面子分区索引，类似次设备号*/
 
     if (tmp) {
         part_num = atoi(tmp);
@@ -440,7 +767,7 @@ void DirectVolume::handlePartitionRemoved(const char * /*devpath*/,
  * Called from base to get a list of devicenodes for mounting
  */
 int DirectVolume::getDeviceNodes(dev_t *devs, int max) {
-
+	SLOGD("getDeviceNodes mPartIdx = %d, mDiskNumParts = %d.",mPartIdx,mDiskNumParts);
     if (mPartIdx == -1) {
         // If the disk has no partitions, try the disk itself
         if (!mDiskNumParts) {

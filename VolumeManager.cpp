@@ -269,18 +269,21 @@ int VolumeManager::listVolumes(SocketClient *cli, bool broadcast) {
         asprintf(&buffer, "%s %s %d",
                  (*i)->getLabel(), (*i)->getFuseMountpoint(),
                  (*i)->getState());
+		SLOGD("listVolumes :%s",buffer);
         cli->sendMsg(ResponseCode::VolumeListResult, buffer, false);
         free(buffer);
         if (broadcast) {
             if((*i)->getUuid()) {
                 snprintf(msg, sizeof(msg), "%s %s \"%s\"", (*i)->getLabel(),
                     (*i)->getFuseMountpoint(), (*i)->getUuid());
+				SLOGD("listVolumes broadcast getUuid:%s",buffer);
                 mBroadcaster->sendBroadcast(ResponseCode::VolumeUuidChange,
                     msg, false);
             }
             if((*i)->getUserLabel()) {
                 snprintf(msg, sizeof(msg), "%s %s \"%s\"", (*i)->getLabel(),
                     (*i)->getFuseMountpoint(), (*i)->getUserLabel());
+				SLOGD("listVolumes broadcast getUserLabel:%s",buffer);				
                 mBroadcaster->sendBroadcast(ResponseCode::VolumeUserLabelChange,
                     msg, false);
             }
@@ -1740,6 +1743,16 @@ int VolumeManager::unmountVolume(const char *label, bool force, bool revert) {
         errno = ENOENT;
         return -1;
     }
+
+#ifdef VOLD_BOX
+/* $_rbox_$_modify_$_huangyonglin: added for adding a way to unmount the mass storage */
+    if (strncmp(v->getLabel(),"usb_storage",strlen("usb_storage"))==0)
+    {
+        SLOGW("Attempt to unmount  %s ",label);
+        return v->unmountUdiskVol(label,force);
+    }
+/* $_rbox_$_modify_$ end */
+#endif
 
     if (v->getState() == Volume::State_NoMedia) {
         errno = ENODEV;
