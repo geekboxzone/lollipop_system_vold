@@ -203,9 +203,13 @@ static int process_config(VolumeManager *vm)
                 !strcmp(fstab->recs[i].fs_type, "vfat")) {
                 flags |= VOL_PROVIDES_ASEC;
             }
+			
+			#ifndef VOLD_BOX
 			if(vm->lookupVolume(fstab->recs[i].label) != NULL)
 				continue;
-            dv = new DirectVolume(vm, &(fstab->recs[i]), flags);
+        	#endif    
+		
+			dv = new DirectVolume(vm, &(fstab->recs[i]), flags);
 			SLOGE("label %s addPath %s\n",fstab->recs[i].label,fstab->recs[i].blk_device);
             if (dv->addPath(fstab->recs[i].blk_device)) {
                 SLOGE("Failed to add devpath %s to volume %s",
