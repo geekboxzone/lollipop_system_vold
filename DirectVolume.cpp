@@ -39,7 +39,6 @@ PathInfo::PathInfo(const char *p)
 {
     warned = false;
     pattern = strdup(p);
-
     if (!strchr(pattern, '*')) {
         patternType = prefix;
     } else {
@@ -160,6 +159,10 @@ void DirectVolume::handleDiskForDuoPartitionRemoved(const char *devpath, Netlink
     char msg[255];
     char devicePath[255];
 
+    setState(Volume::State_Unmounting);
+    usleep(1000 * 1000); // Give the framework some time to react	
+    
+    /*
     sprintf(devicePath, "/dev/block/vold/%d:%d", major,
             minor+mDiskNumParts);
     
@@ -168,7 +171,7 @@ void DirectVolume::handleDiskForDuoPartitionRemoved(const char *devpath, Netlink
              getLabel(), getMountpoint(), major, minor);
     mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskRemoved,
                                              msg, false);
-
+    */
 	//to remove disk mount file.
 	//maybe it's a ntfs udisk, in other words, the whole disk is the unique partition,not any logical partitions.
 	//just remove any partitions in the disk.
@@ -184,6 +187,18 @@ void DirectVolume::handleDiskForDuoPartitionRemoved(const char *devpath, Netlink
     if ( 0 != unlink(devicePath) ) {
         SLOGE("Failed to unlink %s or it has been unlinked!",devicePath);
     }
+
+    setState(Volume::State_Idle);
+
+    sprintf(devicePath, "/dev/block/vold/%d:%d", major,
+            minor+mDiskNumParts);
+    
+    SLOGD("handleDiskForDuoPartitionRemoved Volume %s %s disk %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
+    snprintf(msg, sizeof(msg), "Volume %s %s disk removed (%d:%d)",
+             getLabel(), getMountpoint(), major, minor);
+    mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskRemoved,
+                                             msg, false);
+
     setState(Volume::State_NoMedia);
     setDevPath(NULL);
 }
