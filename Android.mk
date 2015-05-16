@@ -104,6 +104,10 @@ ifeq ($(strip $(TARGET_BOARD_PLATFORM_PRODUCT)), box)
 LOCAL_CFLAGS += -DVOLD_BOX
 endif
 
+ifeq ($(BUILD_WITH_NAND_EMMC),true)
+LOCAL_CFLAGS += -DNAND_EMMC
+endif
+
 ifeq ($(TARGET_HW_DISK_ENCRYPTION),true)
 LOCAL_C_INCLUDES += $(TARGET_CRYPTFS_HW_PATH)
 common_shared_libraries += libcryptfs_hw
