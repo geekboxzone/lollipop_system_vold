@@ -1026,7 +1026,7 @@ int Volume::mountVol() {
 	    else //do not has ums,set group to AID_MEDIA_RW
 	    {
         	if (Fat::doMount(devicePath, getMountpoint(), false, false, false,
-               		AID_SYSTEM,AID_MEDIA_RW, 0007, true)) {
+                        AID_SYSTEM,AID_MEDIA_RW, 0002, true)) {
             	        SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
     
 				if(Ntfs::doMount(devicePath, getMountpoint(), false,AID_SYSTEM,AID_MEDIA_RW)){
