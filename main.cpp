@@ -177,19 +177,7 @@ static int process_config(VolumeManager *vm)
     int flags;
 
     property_get("ro.hardware", propbuf, "");
-    #ifdef NAND_EMMC
-    FILE *fp;
-    if (!(fp = fopen("/proc/nand", "r"))) {
-	snprintf(fstab_filename, sizeof(fstab_filename), FSTAB_PREFIX"%s", propbuf);
-        SLOGE("load emmc ");
-    }else{
-	snprintf(fstab_filename, sizeof(fstab_filename), FSTAB_PREFIX"%s_nand", propbuf);
-	SLOGE("load nand ");
-    }
-    #else
-   
     snprintf(fstab_filename, sizeof(fstab_filename), FSTAB_PREFIX"%s", propbuf);
-    #endif
 
     fstab = fs_mgr_read_fstab(fstab_filename);
     if (!fstab) {
