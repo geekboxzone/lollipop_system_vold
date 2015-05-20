@@ -68,7 +68,7 @@ public:
 /* $_rbox_$_modify_$_huangyonglin: added for adding the partition command */
     static const int VolumePartitionAdded          = 633;
 /* $_rbox_$_modify_$ end */
-
+	static const int VolumeUnmount                 = 634;
     static int convertFromErrno();
 };
 #endif

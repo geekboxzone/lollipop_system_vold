@@ -746,6 +746,14 @@ void DirectVolume::handlePartitionRemoved(const char * /*devpath*/,
          */
 
         bool providesAsec = (getFlags() & VOL_PROVIDES_ASEC) != 0;
+       if(providesAsec){
+
+          snprintf(msg, sizeof(msg), "Volume %s %s unmount (%d:%d)",
+                   getLabel(), getMountpoint(), major, minor);
+          mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeUnmount,
+                           msg, false);
+          sleep(2);
+        }
         if (providesAsec && mVm->cleanupAsec(this, true)) {
             SLOGE("Failed to cleanup ASEC - unmount will probably fail!");
         }
