@@ -510,7 +510,7 @@ int Volume::mountUdiskVol() {
         chmod(mDiskMountFilePathName,0777);
         bUsbDiskMount =false;
 		SLOGW("mountVol mDiskVolumelNum =%s",mDiskMountFilePathName);
-
+		
             for (it = mUdiskPartition->begin(); it != mUdiskPartition->end();it++)
             {
                 imajor =(*it)->imajor;
@@ -654,14 +654,14 @@ int Volume::unmountUdiskVol(const char *label, bool force)
     setState(Volume::State_Unmounting);
         CHANGE_ANDROIDFILESYSTEM_TO_READWRITE;
     SLOGE("1********************************");
-    if(!strcmp(getLabel(),"udiskint"))
+    /* if(!strcmp(getLabel(),"udiskint"))
     {
         for (it = mUdiskPartition->begin(); it != mUdiskPartition->end(); ++it)
         {
             SLOGE("######### del %s", (*it)->ucFilePathName);
-            /*
-            * Finally, unmount the actual block device from the staging dir
-            */
+            
+            //Finally, unmount the actual block device from the staging dir
+            
             if (0 !=doUnmount((*it)->ucFilePathName, force)) {
                 SLOGE("Failed to unmount %s (%s)", (*it)->ucFilePathName, strerror(errno));
                 //goto out_nomedia;
@@ -678,9 +678,9 @@ int Volume::unmountUdiskVol(const char *label, bool force)
         for (it = mUdiskPartition->begin(); it != mUdiskPartition->end();)
         {
             SLOGE("######### del %s", (*it)->ucFilePathName);
-            /*
-            * Finally, unmount the actual block device from the staging dir
-            */
+            
+            //Finally, unmount the actual block device from the staging dir
+            
             if (0 !=doUnmount((*it)->ucFilePathName, force)) {
                 SLOGE("Failed to unmount %s (%s)", (*it)->ucFilePathName, strerror(errno));
             }
@@ -695,7 +695,24 @@ int Volume::unmountUdiskVol(const char *label, bool force)
             if(it ==mUdiskPartition->end())
                 break;
         }
-    }
+    }*/
+    
+    for (it = mUdiskPartition->begin(); it != mUdiskPartition->end(); ++it)
+        {
+            SLOGE("######### del %s", (*it)->ucFilePathName);
+            
+            //Finally, unmount the actual block device from the staging dir
+            
+            if (0 !=doUnmount((*it)->ucFilePathName, force)) {
+                SLOGE("Failed to unmount %s (%s)", (*it)->ucFilePathName, strerror(errno));
+                //goto out_nomedia;
+            }
+            else
+            {
+                SLOGI("%s unmounted sucessfully", (*it)->ucFilePathName);
+            }
+             rmdir((*it)->ucFilePathName);
+        }
     SLOGE("2********************************");
 
         rmdir(mDiskMountFilePathName);
