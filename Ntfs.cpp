@@ -67,8 +67,8 @@ int Ntfs::doMount(const char *fsPath, const char *mountPoint, bool ro, int owner
 	            SLOGE("ntfs-3g did not exit properly");
 	            return -1;
 	        }
-
-	        if (!WEXITSTATUS(status_f)){
+		status_f = WEXITSTATUS(status_f);
+	        if (status_f != 0){
 		   SLOGE("ntfs-3g fail  WEXITSTATUS %d",status_f);
 		   return -1;
 		}
