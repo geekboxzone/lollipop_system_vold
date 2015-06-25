@@ -63,15 +63,12 @@ int Ntfs::doMount(const char *fsPath, const char *mountPoint, bool ro, int owner
             SLOGI(" %s %s %s", NTFS_3G_PATH, fsPath, mountPoint);
             if (!rc) {
 
-		if (!WIFEXITED(status_f)) {
-	            SLOGE("ntfs-3g did not exit properly");
-	            return -1;
-	        }
-		status_f = WEXITSTATUS(status_f);
-	        if (status_f != 0){
-		   SLOGE("ntfs-3g fail  WEXITSTATUS %d",status_f);
+		if (WIFEXITED(status_f)) {
+     		 if (WEXITSTATUS(status_f)) {
+		   SLOGE("ntfs-3g fail  WEXITSTATUS %d",WEXITSTATUS(status_f));	
 		   return -1;
-		}
+     		 }
+    		}
                 SLOGI("Mount NTFS device form %s to %s OK", fsPath, mountPoint);
                 char *lost_path;
                 asprintf(&lost_path, "%s/LOST.DIR", mountPoint);
