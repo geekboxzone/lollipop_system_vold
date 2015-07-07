@@ -43,9 +43,52 @@
 
 #include "VoldUtil.h"
 
+static char NTFS_CHECK_PATH[] = "/system/bin/ntfsfix";
 static char NTFS_3G_PATH[] = "/system/bin/ntfs-3g";
+static char NTFS_FORMAT_PATH[] = "/system/bin/mkntfs";
 
 extern "C" int mount(const char *, const char *, const char *, unsigned long, const void *);
+
+int Ntfs::check(const char *fsPath) {
+	if (access(NTFS_CHECK_PATH, X_OK)) {
+        SLOGW("Skipping ntfs checks\n");
+        return 0;
+    }
+
+    int rc = 0;
+    int status;
+    const char *args[4];
+    /* we first use -n to do ntfs detection */
+    args[0] = NTFS_CHECK_PATH;
+    args[1] = "-n";
+    args[2] = fsPath;
+    args[3] = NULL;
+
+    rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
+            true);
+    if (rc) {
+        errno = ENODATA;
+        return -1;
+    }
+
+    SLOGI("Ntfs filesystem existed");
+
+    /* do the real fix */
+    /* redo the ntfsfix without -n to fix problems */
+    args[1] = fsPath;
+    args[2] = NULL;
+
+    rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
+            true);
+    if (rc) {
+        errno = EIO;
+        SLOGE("Filesystem check failed (unknown exit code %d)", rc);
+        return -1;
+    }
+
+    SLOGI("Ntfs filesystem check completed OK");
+    return 0;
+}
 
 int Ntfs::doMount(const char *fsPath, const char *mountPoint, bool ro, int ownerUid, int ownerGid)
 {
@@ -53,10 +96,18 @@ int Ntfs::doMount(const char *fsPath, const char *mountPoint, bool ro, int owner
     do {
         if (!ro) {
             int status_f;
-            const char *args[3];
+            const char *args[6];
+			char mountData[255];
             args[0] = NTFS_3G_PATH;
-            args[1] = fsPath;
-            args[2] = mountPoint;
+            args[1] = "-o";
+            args[2] = mountData;
+            args[3] = fsPath;
+            args[4] = mountPoint;
+            args[5] = NULL;
+
+			sprintf(mountData, "utf8,uid=%d,gid=%d,shortname=mixed,nodev,nosuid,dirsync,"
+				"big_writes,noatime,delay_mtime=120",
+				ownerUid, ownerGid);
 
             rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status_f,
                     false, true);
@@ -89,17 +140,17 @@ int Ntfs::doMount(const char *fsPath, const char *mountPoint, bool ro, int owner
             }
         } else {
             int status;
-            const char *args[5];
+            const char *args[6];
+			char mountData[255];
             args[0] = NTFS_3G_PATH;
-            args[1] = fsPath;
-            args[2] = mountPoint;
-            args[3] = "-o";
-            //args[4] = "ro,uid=1000";
-            char mountData[255];
-            sprintf(mountData," ro,utf8,uid=%d,gid=%d", ownerUid, ownerGid);
+			args[1] = "-o";
+            args[2] = fsPath;
+            args[3] = mountPoint;
             args[4] = mountData;
+			args[5] = NULL;
 
-            SLOGE("Mount NTFS device form %s ===============",args[4]);
+			sprintf(mountData," ro,utf8,uid=%d,gid=%d", ownerUid, ownerGid);
+
             rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status,
                     false, true);
 
@@ -163,7 +214,55 @@ int Ntfs::unMount(const char *mountPoint)
     return rc;
 }
 
-int Ntfs::format(const char *fsPath, unsigned int numSectors)
+int Ntfs::format(const char *fsPath, unsigned int numSectors, bool wipe, const char *label)
 {
+    const char *args[7];
+    int rc = -1;
+    int status;
+
+    if (access(NTFS_FORMAT_PATH, X_OK)) {
+        SLOGE("Unable to format, mkntfs not found.");
+        return -1;
+    }
+
+    args[0] = NTFS_FORMAT_PATH;
+    if (wipe) {
+		args[1] = "-L";
+		args[2] = label;
+        args[3] = fsPath;
+		if (numSectors) {
+			char sectors[16];
+			sprintf(sectors, "%d", numSectors);
+			args[4] = sectors;
+	        args[5] = NULL;
+		}
+		else
+			args[4] = NULL;
+    } else {
+        args[1] = "-f";
+		args[2] = "-L";
+		args[3] = label;
+        args[4] = fsPath;
+		if (numSectors) {
+			char sectors[16];
+			sprintf(sectors, "%d", numSectors);
+			args[5] = sectors;
+	        args[6] = NULL;
+		}
+		else
+        	args[5] = NULL;
+    }
+
+    rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
+            true);
+
+    if (rc == 0) {
+        SLOGI("Filesystem (NTFS) formatted OK");
+        return 0;
+    } else {
+        SLOGE("Format (NTFS) failed (unknown exit code %d)", rc);
+        errno = EIO;
+        return -1;
+    }
     return 0;
 }

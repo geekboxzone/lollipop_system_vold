@@ -21,9 +21,10 @@
 
 class Ntfs {
 public:
+    static int check(const char *fsPath);
 	static int doMount(const char *fsPath, const char *mountPoint, bool ro, int ownerUid,int ownerGid);
 	static int unMount(const char *mountPoint);
-	static int format(const char *fsPath, unsigned int numSectors);
+	static int format(const char *fsPath, unsigned int numSectors, bool wipe, const char *label);
 };
 
 #endif
