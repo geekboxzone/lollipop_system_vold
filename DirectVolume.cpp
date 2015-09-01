@@ -464,6 +464,14 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
                     else 
                     {
                         char *pDevPah =(char *)getDevPath();
+						if(pDevPah)
+							{
+							SLOGE("#########NetlinkEvent::NlActionAdd  Partition  pDevPah=%s dp",pDevPah,dp);
+							}
+						else
+							{
+								return -1;
+							}
                         if (!strncmp(dp, pDevPah, strlen(pDevPah)))
                         {
                             handleUdiskPartitionAdded(dp,evt);

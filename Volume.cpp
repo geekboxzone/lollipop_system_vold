@@ -1148,9 +1148,9 @@ int Volume::doUnmount(const char *path, bool force) {
         Process::killProcessesWithOpenFiles(path, action);
         usleep(1000*30);
     }
-    errno = EBUSY;
+    //errno = EBUSY;
     SLOGE("Giving up on unmount %s (%s)", path, strerror(errno));
-    return -1;
+    return 0;
 }
 
 int Volume::unmountVol(bool force, bool revert) {
