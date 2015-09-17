@@ -42,6 +42,7 @@ common_c_includes := \
 	external/icu/icu4c/source/common/
 
 common_shared_libraries := \
+	libsparse \
 	libsysutils \
 	libstlport \
 	libbinder \
