@@ -119,7 +119,7 @@ public:
     virtual ~Volume();
 
     int mountVol();
-    int unmountVol(bool force, bool revert);
+    int unmountVol(bool force, bool revert, bool badremove= false);
     int formatVol(bool wipe);
 
     const char* getLabel() { return mLabel; }
@@ -138,9 +138,9 @@ public:
     bool addPartitionMountFile(char *FilePath);
 	//to avoid the same partition volume name;added by zxg
 	bool addPartitionMountFileSuffix(char *filepath);
-    void RemoveUdiskPartition(const char *Mountpoint);
+    int RemoveUdiskPartition(const char *Mountpoint);
     int mountUdiskVol();
-    int unmountUdiskVol(const char *label, bool force);
+    int unmountUdiskVol(const char *label, bool force, bool badremove = false);
 
     void displayItem();
     const char *getDevPath() { return mDevPath; }

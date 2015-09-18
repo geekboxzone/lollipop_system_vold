@@ -52,6 +52,7 @@
 #include "Process.h"
 #include "Asec.h"
 #include "cryptfs.h"
+#define NETLINK_DEBUG 1
 
 #define MASS_STORAGE_FLASH_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun/file"
 #define MASS_STORAGE_SDCARD_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun1/file"
@@ -1464,6 +1465,7 @@ int VolumeManager::mountVolume(const char *label) {
         errno = ENOENT;
         return -1;
     }
+	SLOGD(" volume status = %d----------------------", v->getState());
 
     return v->mountVol();
 }
@@ -1736,7 +1738,7 @@ int VolumeManager::getDirectVolumeList(struct volume_info *vol_list) {
     return 0;
 }
 
-int VolumeManager::unmountVolume(const char *label, bool force, bool revert) {
+int VolumeManager::unmountVolume(const char *label, bool force, bool revert, bool badremove) {
     Volume *v = lookupVolume(label);
 
     if (!v) {
@@ -1749,7 +1751,7 @@ int VolumeManager::unmountVolume(const char *label, bool force, bool revert) {
     if (strncmp(v->getLabel(),"usb_storage",strlen("usb_storage"))==0)
     {
         SLOGW("Attempt to unmount  %s ",label);
-        return v->unmountUdiskVol(label,force);
+        return v->unmountUdiskVol(label,force, badremove);
     }
 /* $_rbox_$_modify_$ end */
 #endif
@@ -1771,7 +1773,7 @@ int VolumeManager::unmountVolume(const char *label, bool force, bool revert) {
     if(providesAsec)
         cleanupAsec(v, force);
 
-    return v->unmountVol(force, revert);
+    return v->unmountVol(force, revert, badremove);
 }
 
 extern "C" int vold_unmountAllAsecs(void) {

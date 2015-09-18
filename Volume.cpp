@@ -379,7 +379,7 @@ int Volume::addUdiskPartition(int major,int minor)
     return -1;
 }
 
-void Volume::RemoveUdiskPartition(const char *Mountpoint) 
+int Volume::RemoveUdiskPartition(const char *Mountpoint) 
 {
     UDISK_PARTITION_CONFIG *partition;
     int ii =0;
@@ -388,15 +388,16 @@ void Volume::RemoveUdiskPartition(const char *Mountpoint)
 
     for (it = mUdiskPartition->begin(); it != mUdiskPartition->end(); ++it)
     {
-//        SLOGE("############ RemoveUdiskPartition remove =%s##################",(*it)->ucMountPoint);
+	   SLOGE("############ RemoveUdiskPartition remove =%s##################",(*it)->ucMountPoint);
        if (!strncmp(Mountpoint, (*it)->ucMountPoint,strlen((*it)->ucMountPoint)))
        {
             mUdiskPartition->erase(it);
-            return ;
+            return 0;
        }
     }
 
     SLOGE("############ RemoveUdiskPartition error no such  Mountpoint =%s##################",Mountpoint);
+	return -1;
 }
 const char *Volume::setDevPath(const char *DevPath)
 {
@@ -511,8 +512,13 @@ int Volume::mountUdiskVol() {
         bUsbDiskMount =false;
 		SLOGW("mountVol mDiskVolumelNum =%s",mDiskMountFilePathName);
 		
-            for (it = mUdiskPartition->begin(); it != mUdiskPartition->end();it++)
+            for (it = mUdiskPartition->begin(); it != mUdiskPartition->end();)
             {
+	            if((*it) == NULL)
+		        {
+		        SLOGW("POINT IS NULL------------------");
+	            	return -1;
+				}
                 imajor =(*it)->imajor;
                 iminor =(*it)->iminor;
                 
@@ -600,15 +606,26 @@ int Volume::mountUdiskVol() {
                 if(iMountRet ==false)
                 {
                    // if(mUdiskPartition->size() >2)
-                    	rmdir((*it)->ucFilePathName);
+                    	
                     SLOGE("earse succed!!!");
                     SLOGE("%s failed to mount via %s (%s)",devicePath,szType,strerror(errno));
+					umount((*it)->ucFilePathName);
+					rmdir((*it)->ucFilePathName);
+					//RemoveUdiskPartition((*it)->ucMountPoint);
+					if(0 == RemoveUdiskPartition((*it)->ucMountPoint)){
+						continue;
+					}else{
+						++it;
+					}
+					//setDevPath(NULL);
+					//bSucceed =false;
                 }
                 else
                 {
                     SLOGE("mount vfat %s succed!!!",(*it)->ucFilePathName);
                     bSucceed =true;
                     //mDiskVolumelMinors[mDiskVolumelNum++] =iminor;
+                    it++;
                 }
             }
             if(bSucceed)
@@ -629,12 +646,13 @@ int Volume::mountUdiskVol() {
     return -1;
 }
 
-int Volume::unmountUdiskVol(const char *label, bool force)
+int Volume::unmountUdiskVol(const char *label, bool force, bool badremove)
 {
     int i;
     char Mountpoint[55];
     int istate ;
     UDisk_Partition_Collection::iterator it;
+	char devicePath[255];
 
     istate =getState();
 
@@ -697,8 +715,8 @@ int Volume::unmountUdiskVol(const char *label, bool force)
         }
     }*/
     
-    for (it = mUdiskPartition->begin(); it != mUdiskPartition->end(); ++it)
-        {
+    for (it = mUdiskPartition->begin(); it != mUdiskPartition->end(); )
+    {
             SLOGE("######### del %s", (*it)->ucFilePathName);
             
             //Finally, unmount the actual block device from the staging dir
@@ -712,10 +730,25 @@ int Volume::unmountUdiskVol(const char *label, bool force)
                 SLOGI("%s unmounted sucessfully", (*it)->ucFilePathName);
             }
              rmdir((*it)->ucFilePathName);
-        }
-    SLOGE("2********************************");
+			 if(badremove){
+			 	sprintf(devicePath, "/dev/block/vold/%d:%d", (*it)->imajor, (*it)->iminor);
+				SLOGE("handleUdiskPartitionRemoved handlePartitionRemoved,ready to unlink: %s",devicePath);
+				if ( 0 != unlink(devicePath) ) {
+					SLOGE("handleUdiskPartitionRemoved Failed to unlink %s",devicePath);
+				}
+			 	it = mUdiskPartition->erase(it);
+				if(it ==mUdiskPartition->end())
+	                break;
+			 }else{
+			  ++it;
+			}
+	}
+	SLOGE("2********************************");
 
-        rmdir(mDiskMountFilePathName);
+	if(badremove)
+		setDevPath(NULL);
+
+	rmdir(mDiskMountFilePathName);
     CHANGE_ANDROIDFILESYSTEM_TO_READONLY;
         system("sync");
     setState(Volume::State_Idle);
@@ -1148,12 +1181,12 @@ int Volume::doUnmount(const char *path, bool force) {
         Process::killProcessesWithOpenFiles(path, action);
         usleep(1000*30);
     }
-    //errno = EBUSY;
+    errno = EBUSY;
     SLOGE("Giving up on unmount %s (%s)", path, strerror(errno));
-    return 0;
+    return -1;
 }
 
-int Volume::unmountVol(bool force, bool revert) {
+int Volume::unmountVol(bool force, bool revert, bool badremove) {
     int i, rc;
 
     int flags = getFlags();
@@ -1229,6 +1262,17 @@ fail_remount_secure:
 out_mounted:
     setState(Volume::State_Mounted);
     return -1;
+	
+/*fail_remount_tmpfs:
+    if (mount("tmpfs", SEC_STG_SECIMGDIR, "tmpfs", MS_RDONLY, "size=0,mode=0,uid=0,gid=0")) {
+        SLOGE("Failed to restore tmpfs after failure! - Storage will appear offline!");
+        goto out_nomedia;
+    }
+fail_republish:
+    if (doMoveMount(SEC_STGDIR, getMountpoint(), force)) {
+        SLOGE("Failed to republish mount after failure! - Storage will appear offline!");
+        goto out_nomedia;
+    }*/
 
 out_nomedia:
     setState(Volume::State_NoMedia);

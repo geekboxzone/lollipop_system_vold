@@ -159,8 +159,8 @@ void DirectVolume::handleDiskForDuoPartitionRemoved(const char *devpath, Netlink
     char msg[255];
     char devicePath[255];
 
-    setState(Volume::State_Unmounting);
-    usleep(1000 * 1000); // Give the framework some time to react	
+    //setState(Volume::State_Unmounting);
+    //usleep(1000 * 1000); // Give the framework some time to react	
     
     /*
     sprintf(devicePath, "/dev/block/vold/%d:%d", major,
@@ -175,6 +175,7 @@ void DirectVolume::handleDiskForDuoPartitionRemoved(const char *devpath, Netlink
 	//to remove disk mount file.
 	//maybe it's a ntfs udisk, in other words, the whole disk is the unique partition,not any logical partitions.
 	//just remove any partitions in the disk.
+	#if 0
 	handleAllUdiskPartitionRemoved();
     CHANGE_ANDROIDFILESYSTEM_TO_READWRITE;
 	if(rmdir(mDiskMountFilePathName)){
@@ -187,6 +188,7 @@ void DirectVolume::handleDiskForDuoPartitionRemoved(const char *devpath, Netlink
     if ( 0 != unlink(devicePath) ) {
         SLOGE("Failed to unlink %s or it has been unlinked!",devicePath);
     }
+	#endif 
 
     setState(Volume::State_Idle);
 
@@ -200,7 +202,7 @@ void DirectVolume::handleDiskForDuoPartitionRemoved(const char *devpath, Netlink
                                              msg, false);
 
     setState(Volume::State_NoMedia);
-    setDevPath(NULL);
+    //setDevPath(NULL);
 }
 void DirectVolume::handleUdiskPartitionRemoved(const char *devpath, NetlinkEvent *evt)
 {
@@ -210,7 +212,7 @@ void DirectVolume::handleUdiskPartitionRemoved(const char *devpath, NetlinkEvent
     const char *pMountpoint =NULL;
     int istate;
     UDISK_PARTITION_CONFIG *pUdiskPartiton;
-
+#if 0
     pUdiskPartiton =getPartitionState(major,minor);
     if(pUdiskPartiton ==NULL)
         return  ;
@@ -237,6 +239,7 @@ void DirectVolume::handleUdiskPartitionRemoved(const char *devpath, NetlinkEvent
     if ( 0 != unlink(devicePath) ) {
         SLOGE("handleUdiskPartitionRemoved Failed to unlink %s",devicePath);
     }
+#endif
 }
 void DirectVolume::handleAllUdiskPartitionRemoved() {
 	if(!mUdiskPartition || mUdiskPartition->empty())
@@ -422,7 +425,7 @@ void DirectVolume::handleUdiskPartitionAdded(const char *devpath, NetlinkEvent *
 
 int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
     const char *dp = evt->findParam("DEVPATH");
-	SLOGD("DEVPATH = %s.",dp);
+	SLOGD("directvolume DEVPATH = %s.",dp);
 
     PathCollection::iterator  it;
     for (it = mPaths->begin(); it != mPaths->end(); ++it) {
@@ -464,12 +467,10 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
                     else 
                     {
                         char *pDevPah =(char *)getDevPath();
-						if(pDevPah)
-							{
+						if(pDevPah){
 							SLOGE("#########NetlinkEvent::NlActionAdd  Partition  pDevPah=%s dp",pDevPah,dp);
 							}
-						else
-							{
+						else{
 								return -1;
 							}
                         if (!strncmp(dp, pDevPah, strlen(pDevPah)))
@@ -514,11 +515,24 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
                         return -1;
                     else if(strncmp(dp, pDevPah, strlen(pDevPah)))
                         return -1;
-        	           SLOGE("NlActionRemove pDevPah=%s,devtype=%s",pDevPah,devtype);
+        	           SLOGE("#######################################NlActionRemove pDevPah=%s,devtype=%s",pDevPah,devtype);
                     if (!strcmp(devtype, "disk")) {
-                        handleDiskForDuoPartitionRemoved(dp, evt);
+						//setState(Volume::State_Unmounting);
+                        //handleDiskForDuoPartitionRemoved(dp, evt);
+                         handleDiskRemoved(dp, evt);
+						//setDevPath(NULL);
                     } else {
-                        handleUdiskPartitionRemoved(dp, evt);
+                    //setState(Volume::State_Unmounting);
+                	/*if(getState() >= Volume::State_Idle){
+                		SLOGI("#####22Volume NlActionRemove sleep 5 sec");
+						usleep(1000*300);
+                	}
+					while(getState() == Volume::State_Checking || getState() == Volume::State_Pending){
+						SLOGI("#### wait for mount successfully");
+						usleep(1000*200);
+					}
+					handleUdiskPartitionRemoved(dp, evt);*/
+					handlePartitionRemoved(dp, evt);
                     }            	    
             	}
 				/* $_rbox_$_modify_$ end */
@@ -698,7 +712,15 @@ void DirectVolume::handleDiskRemoved(const char * /*devpath*/,
         mVm->unshareVolume(getLabel(), "ums");
     }
 
-   
+	if ( 0 == mDiskNumParts ) {
+			SLOGD("####################################Volume %s %s disk %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
+			snprintf(msg, sizeof(msg), "Volume %s %s bad removal (%d:%d)",
+					getLabel(), getMountpoint(), major, minor);
+			mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeBadRemoval,
+					msg, false);
+		}
+
+   #if 0
     sprintf(devicePath, "/dev/block/vold/%d:%d", major,minor);
 
     if (access(devicePath, R_OK) == 0) {
@@ -726,6 +748,7 @@ void DirectVolume::handleDiskRemoved(const char * /*devpath*/,
     mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskRemoved,
                                              msg, false);
     setState(Volume::State_NoMedia);
+	#endif 
 }
 
 void DirectVolume::handlePartitionRemoved(const char * /*devpath*/,
@@ -744,10 +767,10 @@ void DirectVolume::handlePartitionRemoved(const char * /*devpath*/,
      * itself
      */
     state = getState();
-    if (state != Volume::State_Mounted && state != Volume::State_Shared) {
+    /*if (state != Volume::State_Mounted && state != Volume::State_Shared) {
         return;
-    }
-        
+    }*/
+    #if 0
     if ((dev_t) MKDEV(major, minor) == mCurrentlyMountedKdev) {
         /*
          * Yikes, our mounted partition is going away!
@@ -770,6 +793,7 @@ void DirectVolume::handlePartitionRemoved(const char * /*devpath*/,
         } else {
             SLOGD("Crisis averted");
         }
+
     } else if (state == Volume::State_Shared) {
         /* removed during mass storage */
          snprintf(msg, sizeof(msg), "Volume %s %s bad removal (%d:%d)",
@@ -783,6 +807,32 @@ void DirectVolume::handlePartitionRemoved(const char * /*devpath*/,
         } else {
             SLOGD("Crisis averted");
         }
+    }
+	#endif
+	if (state == Volume::State_Shared) {
+        /* removed during mass storage */
+         snprintf(msg, sizeof(msg), "Volume %s %s bad removal (%d:%d)",
+                 getLabel(), getFuseMountpoint(), major, minor);
+        mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeBadRemoval,
+                                             msg, false);
+
+        if (mVm->unshareVolume(getLabel(), "ums")) {
+            SLOGE("Failed to unshare volume on bad removal (%s)",
+                strerror(errno));
+        } else {
+            SLOGD("Crisis averted");
+        }
+    }else{
+	     bool providesAsec = (getFlags() & VOL_PROVIDES_ASEC) != 0;
+        if (providesAsec && mVm->cleanupAsec(this, true)) {
+            SLOGE("Failed to cleanup ASEC - unmount will probably fail!");
+        }
+
+		SLOGE("################sendbroadcast---------");
+        snprintf(msg, sizeof(msg), "Volume %s %s bad removal (%d:%d)",
+                 getLabel(), getFuseMountpoint(), major, minor);
+        mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeBadRemoval,
+                                             msg, false);
     }
 }
 

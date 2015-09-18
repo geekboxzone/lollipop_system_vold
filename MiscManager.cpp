@@ -75,7 +75,7 @@ void MiscManager::handleEvent(NetlinkEvent *evt) {
     MiscCollection::iterator it;
     bool hit = false;
 
-	SLOGD("%s, %d", subsys, evt->getAction());
+	SLOGD("handleEvent   %s, %d", subsys, evt->getAction());
 	
 		
     for (it = mMiscs->begin(); it != mMiscs->end(); ++it) {
