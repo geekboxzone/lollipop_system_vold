@@ -512,7 +512,7 @@ int Volume::mountUdiskVol() {
         bUsbDiskMount =false;
 		SLOGW("mountVol mDiskVolumelNum =%s",mDiskMountFilePathName);
 		
-            for (it = mUdiskPartition->begin(); it != mUdiskPartition->end();)
+            for (it = mUdiskPartition->begin(); it != mUdiskPartition->end(); ++it)
             {
 	            if((*it) == NULL)
 		        {
@@ -612,11 +612,11 @@ int Volume::mountUdiskVol() {
 					umount((*it)->ucFilePathName);
 					rmdir((*it)->ucFilePathName);
 					//RemoveUdiskPartition((*it)->ucMountPoint);
-					if(0 == RemoveUdiskPartition((*it)->ucMountPoint)){
+					/*if(0 == RemoveUdiskPartition((*it)->ucMountPoint)){
 						continue;
 					}else{
 						++it;
-					}
+					}*/
 					//setDevPath(NULL);
 					//bSucceed =false;
                 }
@@ -625,7 +625,6 @@ int Volume::mountUdiskVol() {
                     SLOGE("mount vfat %s succed!!!",(*it)->ucFilePathName);
                     bSucceed =true;
                     //mDiskVolumelMinors[mDiskVolumelNum++] =iminor;
-                    it++;
                 }
             }
             if(bSucceed)
