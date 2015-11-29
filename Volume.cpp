@@ -50,6 +50,7 @@
 #include "Process.h"
 #include "cryptfs.h"
 #include "Ext4.h"
+#include "Exfat.h"
 
 #include "blkid/blkid.h"  
 #include "unicode/ucnv.h"
@@ -601,6 +602,21 @@ int Volume::mountUdiskVol() {
                             bUsbDiskMount =true;
                     }                       
                 }
+                else if( !strcmp(szType,"exFat")){
+                 if (Exfat::doMount(devicePath, (*it)->ucFilePathName, false, 1000)==0) 
+                 {
+                     iMountRet =true;
+                     bUsbDiskMount =true;
+                 }
+                }
+				else
+                {
+	                if (Exfat::doMount(devicePath, (*it)->ucFilePathName, false, 1000) ==0)
+                    {
+                            iMountRet =true;
+                            bUsbDiskMount =true;
+                    }                       
+                }
 
                
                 if(iMountRet ==false)
@@ -1060,10 +1076,14 @@ int Volume::mountVol() {
 			     	mSkipAsec = true;
 		             SLOGE("---------set mSkipAsec to disable app2sd because mount Vfat fail for %s, mountpoint =%s",getLabel(),getMountpoint());
 				}
-	      		if(Ntfs::doMount(devicePath, getMountpoint(), false,AID_SYSTEM,AID_SDCARD_RW)){ 
-	            	SLOGE("%s failed to mount via VNTFS (%s)\n", devicePath, strerror(errno));
-	            	continue;
-	            }
+                
+                if(Ntfs::doMount(devicePath, getMountpoint(), false,AID_SYSTEM,AID_MEDIA_RW)){
+                    SLOGE("%s failed to mount via NTFS (%s), Try to mount uses Exfat ...\n", devicePath, strerror(errno));
+					if (Exfat::doMount(devicePath, getMountpoint(), false, 1000)){
+						SLOGE("%s failed to mount via Exfat (%s)\n", devicePath, strerror(errno));
+						continue;
+					}
+                }
 			}
 			else   //mount flash as fat succeed
 	    	{
@@ -1076,12 +1096,19 @@ int Volume::mountVol() {
 	    {
         	if (Fat::doMount(devicePath, getMountpoint(), false, false, false,
                         AID_SYSTEM,AID_MEDIA_RW, 0002, true)) {
-            	        SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
-    
-				if(Ntfs::doMount(devicePath, getMountpoint(), false,AID_SYSTEM,AID_MEDIA_RW)){
-               			SLOGE("%s failed to mount via VNTFS (%s)\n", devicePath, strerror(errno));
-		       		continue;
-		     	}
+                SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
+                if(Ntfs::doMount(devicePath, getMountpoint(), false,AID_SYSTEM,AID_MEDIA_RW)){
+                    if (Exfat::doMount(devicePath, getMountpoint(), false, 1000)){
+                        SLOGE("%s failed to mount via (%s)\n", devicePath, strerror(errno));
+                        if (getState() == Volume::State_NoMedia) {
+                            SLOGE("mount failed because no media\n");
+                            errno = ENODEV;
+                        } else {
+                            setState(Volume::State_Idle);
+                        }
+                        return -1;
+					}
+                }
         	}
 	    }   
 		//blkid identified as /dev/block/vold/179:14: LABEL="ROCKCHIP" UUID="0FE6-0808" TYPE="vfat"

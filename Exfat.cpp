@@ -68,7 +68,7 @@ int Exfat::doMount(const char *fsPath, const char *mountPoint, bool ro, int owne
 			if(!rc){
 				if (WIFEXITED(status_f)) {
 					if (WEXITSTATUS(status_f)) {
-						SLOGE("ntfs-3g fail  WEXITSTATUS %d",WEXITSTATUS(status_f));
+						SLOGE("exfat fail  WEXITSTATUS %d",WEXITSTATUS(status_f));
 						return -1;
 					}
 				}
